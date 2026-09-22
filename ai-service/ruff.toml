@@ -1,0 +1,9 @@
+line-length = 100
+target-version = "py312"
+exclude = ["venv", ".venv"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[lint.isort]
+known-first-party = ["app"]

@@ -1,0 +1,46 @@
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+!frontend/.env.example
+
+# --- Node ---
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+.npm
+
+# --- Frontend (Vite) ---
+frontend/dist/
+frontend/.vite/
+
+# --- Backend (Prisma) ---
+backend/dist/
+backend/prisma/migrations/dev.db
+backend/src/generated/
+
+# --- Python / AI service ---
+ai-service/venv/
+ai-service/__pycache__/
+ai-service/**/__pycache__/
+ai-service/.pytest_cache/
+ai-service/*.egg-info/
+**/*.pyc
+
+# --- Docker ---
+docker/**/*.local.sql
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# --- Test / coverage ---
+coverage/
+.nyc_output/
+playwright-report/
+test-results/

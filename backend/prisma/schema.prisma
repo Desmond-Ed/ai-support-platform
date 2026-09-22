@@ -1,0 +1,343 @@
+// Prisma schema — Phase 2.
+//
+// Write ownership (see docs/ai.md for the full reasoning):
+//   - Node/Prisma is the ONLY writer for: User, Conversation, Message,
+//     Ticket, TicketAssignment, AgentAvailability, Notification,
+//     ConversationFeedback, AuditLog. These are "application state" per
+//     the spec's ownership rule and Python never touches them directly.
+//   - KnowledgeDocument / KnowledgeChunk / Embedding are the one
+//     deliberate exception: Node creates the KnowledgeDocument row
+//     (status PENDING) and enqueues a BullMQ ingestion job, then the
+//     Python worker connects to this same Postgres database directly
+//     (via psycopg, not this Prisma client — Prisma Client is TS-only)
+//     to write chunks + vectors and flip the document to READY. This
+//     matches the spec's §12 ingestion workflow exactly and is in-bounds
+//     because the ownership rule scopes "application state" to
+//     users/tickets/conversations/auth/permissions specifically —
+//     knowledge/embedding data isn't in that list.
+
+generator client {
+  provider        = "prisma-client-js"
+  output	  = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum ConversationStatus {
+  AI_HANDLING // AI is actively answering
+  ESCALATED // AI could not answer confidently, awaiting agent pickup
+  WITH_AGENT // an agent has taken over
+  RESOLVED
+  CLOSED
+}
+
+enum MessageSenderType {
+  CUSTOMER
+  AI
+  AGENT
+  SYSTEM // e.g. "Ticket created", "Agent joined the conversation"
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum KnowledgeDocumentStatus {
+  PENDING // row created by Node, not yet picked up by the ingestion worker
+  PROCESSING // Python worker is chunking/embedding
+  READY
+  FAILED
+}
+
+enum AgentStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+// Mirrors the Socket.IO event contract from docs/architecture.md —
+// notification.type tells the frontend which UI treatment to use, but
+// the actual push still goes over the existing 'notification' event,
+// not a new one, per Operating Rule (do not invent new event systems).
+enum NotificationType {
+  TICKET_CREATED
+  AGENT_REPLIED
+  TICKET_STATUS_CHANGED
+  AI_HANDOFF
+  TICKET_RESOLVED
+}
+
+// ─── Core application state (Node-owned) ───────────────────────────────
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String
+  name         String
+  role         Role    @default(CUSTOMER)
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // Relations
+  conversationsAsCustomer Conversation[]         @relation("CustomerConversations")
+  conversationsAsAgent    Conversation[]         @relation("AgentConversations")
+  tickets                 Ticket[]               @relation("CustomerTickets")
+  ticketAssignments       TicketAssignment[]
+  agentAvailability       AgentAvailability?
+  notifications           Notification[]
+  feedback                ConversationFeedback[]
+  auditLogs               AuditLog[]
+  refreshTokens           RefreshToken[]
+  uploadedDocuments       KnowledgeDocument[]
+
+  @@index([role])
+  @@map("users")
+}
+
+// Not in the spec's entity list by name, but required to implement the
+// approved JWT + refresh-token auth architecture safely: refresh tokens
+// need a persisted, revocable record (logout, rotation, "log out all
+// devices") rather than being trusted as a bare JWT forever. Storing a
+// hash, not the raw token. Flagging this addition per Operating Rule 1 —
+// it implements the specified auth architecture, it doesn't change it.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz
+  revokedAt DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Conversation {
+  id         String             @id @default(uuid())
+  customerId String
+  customer   User               @relation("CustomerConversations", fields: [customerId], references: [id], onDelete: Cascade)
+  agentId    String?
+  agent      User?              @relation("AgentConversations", fields: [agentId], references: [id], onDelete: SetNull)
+  status     ConversationStatus @default(AI_HANDLING)
+
+  // Denormalized for the Phase 10 "AI resolution rate" chart
+  // (resolvedByAI / totalConversations * 100) without an expensive join.
+  resolvedByAI Boolean @default(false)
+
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @db.Timestamptz
+  resolvedAt DateTime? @db.Timestamptz
+
+  messages Message[]
+  tickets  Ticket[]
+  feedback ConversationFeedback?
+
+  @@index([customerId])
+  @@index([agentId])
+  @@index([status])
+  @@index([createdAt]) // daily/weekly conversation charts
+  @@map("conversations")
+}
+
+model Message {
+  id             String            @id @default(uuid())
+  conversationId String
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType     MessageSenderType
+  senderId       String? // null for AI/SYSTEM messages
+  content        String            @db.Text
+
+  // AI decision metadata (spec §8) — populated only on senderType = AI.
+  // Kept nullable/optional rather than a separate table since it's 1:1
+  // with the message and always read together with it.
+  confidence     Float?
+  grounded       Boolean?
+  shouldEscalate Boolean?
+  sources        Json? // retrieved KnowledgeChunk ids/snippets used
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model Ticket {
+  id             String         @id @default(uuid())
+  conversationId String
+  conversation   Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       User           @relation("CustomerTickets", fields: [customerId], references: [id], onDelete: Cascade)
+  status         TicketStatus   @default(OPEN)
+  priority       TicketPriority @default(MEDIUM)
+  subject        String
+  description    String?        @db.Text
+
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @db.Timestamptz
+  resolvedAt DateTime? @db.Timestamptz
+
+  assignments TicketAssignment[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt]) // ticket volume chart
+  @@map("tickets")
+}
+
+// Kept as its own table (not just Ticket.assignedAgentId) so the
+// assignment *history* survives reassignment — needed for the Agent
+// Workflow's "Reassign" action and for any future "time to first
+// response" / agent workload analytics.
+model TicketAssignment {
+  id           String    @id @default(uuid())
+  ticketId     String
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  agentId      String
+  agent        User      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime  @default(now()) @db.Timestamptz
+  unassignedAt DateTime? @db.Timestamptz
+
+  @@index([ticketId])
+  @@index([agentId])
+  @@map("ticket_assignments")
+}
+
+model AgentAvailability {
+  id        String      @id @default(uuid())
+  agentId   String      @unique
+  agent     User        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status    AgentStatus @default(OFFLINE)
+  updatedAt DateTime    @updatedAt @db.Timestamptz
+
+  @@map("agent_availability")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  payload   Json
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now()) @db.Timestamptz
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+model ConversationFeedback {
+  id             String       @id @default(uuid())
+  conversationId String       @unique
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  rating         Int // 1–5, validated at the application layer (Zod), not DB-constrained here
+  comment        String?      @db.Text
+  createdAt      DateTime     @default(now()) @db.Timestamptz
+
+  @@index([rating]) // customer satisfaction chart
+  @@map("conversation_feedback")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String // e.g. "TICKET_STATUS_CHANGED", "USER_LOGIN_FAILED"
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Knowledge base / RAG (Node creates + Python writes, see header) ───
+
+model KnowledgeDocument {
+  id           String                  @id @default(uuid())
+  title        String
+  status       KnowledgeDocumentStatus @default(PENDING)
+  uploadedById String
+  uploadedBy   User                    @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  sourceType   String // "UPLOAD" | "URL" | "MANUAL" — kept as String not enum;
+  // the AI service (Python, no shared Prisma enum type) also writes this
+  // field, so a loose String avoids cross-language enum drift. Validated
+  // by Zod on the Node write path and by Pydantic on the Python write path.
+  errorMessage String?                 @db.Text // populated by the worker if status = FAILED
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  chunks KnowledgeChunk[]
+
+  @@index([status])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String            @id @default(uuid())
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String            @db.Text
+  chunkIndex Int // order within the source document
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  embedding Embedding?
+
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
+
+// Separated from KnowledgeChunk (rather than a vector column inline on
+// the chunk) so a chunk can be re-embedded with a different model/dims
+// without touching chunk content — the version currently in use is just
+// whichever Embedding row exists, but this also means we could keep
+// multiple embedding versions side by side during a model migration
+// (e.g. testing a new embedding model on production data before cutover).
+// Prisma has no native pgvector type, so this is stored via
+// `Unsupported("vector(1536)")`; Prisma Client cannot read/write this
+// column directly — the Python worker writes it, and Python's retrieval
+// code queries it with raw SQL ($queryRaw / psycopg), not Prisma.
+// 1536 = OpenAI text-embedding-3-small's dimension; revisit this literal
+// if a different embedding model is chosen in Phase 6/7.
+model Embedding {
+  id        String                      @id @default(uuid())
+  chunkId   String                      @unique
+  chunk     KnowledgeChunk              @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  model     String // e.g. "text-embedding-3-small"
+  vector    Unsupported("vector(1536)")
+  createdAt DateTime                    @default(now()) @db.Timestamptz
+
+  @@map("embeddings")
+}

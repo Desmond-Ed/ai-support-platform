@@ -37,7 +37,8 @@ export interface AuthResult {
 }
 
 function sanitizeUser(user: User): SafeUser {
-  const { passwordHash: _passwordHash, ...safe } = user;
+  const { passwordHash, ...safe } = user;
+  void passwordHash;
   return safe;
 }
 

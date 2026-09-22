@@ -1,7 +1,8 @@
-import type { NextFunction, Request, Response } from 'express';
-import { verifyAccessToken } from './utils/jwt.js';
-import { AppError } from './utils/AppError.js';
-import type { Role } from './generated/prisma/client.js';
+import type { RequestHandler } from 'express';
+import { verifyAccessToken } from '../utils/jwt.js';
+import { AppError } from '../utils/AppError.js';
+import type { Role } from '../generated/prisma/client.js';
+import type { AccessTokenPayload } from '../types/auth.types.js';
 
 /**
  * Verifies the `Authorization: Bearer <token>` access token and attaches
@@ -13,22 +14,21 @@ import type { Role } from './generated/prisma/client.js';
  * addition (e.g. a DB check here, or a short-lived denylist) — not
  * something to silently bolt on now.
  */
-export function authenticate(req: Request, _res: Response, next: NextFunction): void {
-  try {
-    const header = req.headers.authorization;
-    if (!header || !header.startsWith('Bearer ')) {
-      throw new AppError('Missing or malformed Authorization header', 401);
-    }
+export const authenticate: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    throw new AppError('Missing or malformed Authorization header', 401);
+  }
 
-    const token = header.slice('Bearer '.length).trim();
-    if (!token) {
-      throw new AppError('Missing or malformed Authorization header', 401);
-    }
+  const token = header.slice('Bearer '.length).trim();
+  if (!token) {
+    throw new AppError('Missing or malformed Authorization header', 401);
+  }
 
-    const payload = verifyAccessToken(token); // throws AppError(401) on bad signature / expired token
-    req.user = { id: payload.sub, role: payload.role };
-    next();
-}
+  const payload: AccessTokenPayload = verifyAccessToken(token);
+  req.user = { id: payload.sub, role: payload.role };
+  next();
+};
 
 /**
  * Role check against the JWT's own `role` claim — not a DB lookup. That
@@ -42,8 +42,8 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
  * Must run after `authenticate` in the route chain. Usage:
  *   router.get('/admin/x', authenticate, requireRole('ADMIN'), handler)
  */
-export function requireRole(...allowedRoles: Role[]) {
-  return function (req: Request, _res: Response, next: NextFunction): void {
+export function requireRole(...allowedRoles: Role[]): RequestHandler {
+  return function roleGuard(req, _res, next) {
     if (!req.user) {
       // Missing req.user here means the route forgot to run
       // `authenticate` first, not that this user lacks permission —
@@ -59,4 +59,4 @@ export function requireRole(...allowedRoles: Role[]) {
 
     next();
   };
-}}
+}

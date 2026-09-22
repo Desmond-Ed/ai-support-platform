@@ -16,7 +16,7 @@ export const registerSchema = z.object({
     .email('Must be a valid email address')
     .max(255),
   // Bcrypt silently truncates input beyond 72 bytes — capping here
-  // means the constraint is visible and enforced, not a silent footgun.
+  // means the constraint is visible and enforced, not a silent foot_gun.
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters')

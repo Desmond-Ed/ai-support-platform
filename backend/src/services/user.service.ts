@@ -1,6 +1,7 @@
 import { UserRepository } from '../repositories/UserRepository.js';
 import { AppError } from '../utils/AppError.js';
 import type { User } from '../generated/prisma/client.js';
+import type { UpdateProfileInput } from '../validators/user.validators.js';
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
@@ -18,5 +19,14 @@ export const UserService = {
     }
 
     return sanitizeUser(user);
+  },
+
+  async updateProfile(id: string, input: UpdateProfileInput): Promise<SafeUser> {
+    const user = await UserRepository.findById(id);
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    return sanitizeUser(await UserRepository.updateName(id, input.name));
   },
 };

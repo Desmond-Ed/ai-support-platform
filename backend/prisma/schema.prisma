@@ -286,6 +286,7 @@ model AuditLog {
 model KnowledgeDocument {
   id           String                  @id @default(uuid())
   title        String
+  content      String                  @db.Text // raw source text captured for chunking + embedding
   status       KnowledgeDocumentStatus @default(PENDING)
   uploadedById String
   uploadedBy   User                    @relation(fields: [uploadedById], references: [id], onDelete: Cascade)

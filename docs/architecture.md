@@ -88,6 +88,11 @@ revokes it. Each refresh JWT includes a random `jti` so tokens issued for the
 same user in the same second remain distinct; `jti` is not the Prisma row ID.
 
 The backend runs on port 4000, the AI service on 8000, and the frontend on
-5173 in Docker Compose. Conversation state, Socket.IO event flows, BullMQ
-workers, RAG, knowledge ingestion, tickets, agent tooling, admin workflows,
-and analytics remain planned work.
+5173 in Docker Compose. Knowledge document creation enqueues asynchronous
+ingestion after persisting a pending document; the AI service performs bounded
+paragraph-aware chunking. Provider-backed embeddings and pgvector writes are
+still the next ingestion slice. Socket.IO authenticates access JWTs during connection,
+places clients in private user rooms, and provides server-side emitters for
+`ticket_updated`, `agent_assigned`, and `notification`. Resource-specific room
+authorization and frontend subscriptions remain planned work. BullMQ workers,
+ticket tooling, admin workflows, and analytics remain planned work.

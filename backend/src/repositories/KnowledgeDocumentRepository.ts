@@ -21,6 +21,7 @@ export const KnowledgeDocumentRepository = {
   async create(
     data: {
       title: string;
+      content: string;
       uploadedById: string;
       sourceType: string;
       status?: 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
@@ -30,6 +31,7 @@ export const KnowledgeDocumentRepository = {
     return db.knowledgeDocument.create({
       data: {
         title: data.title,
+        content: data.content,
         uploadedById: data.uploadedById,
         sourceType: data.sourceType,
         status: data.status ?? 'PENDING',

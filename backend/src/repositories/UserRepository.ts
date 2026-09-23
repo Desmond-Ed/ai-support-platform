@@ -22,6 +22,10 @@ export const UserRepository = {
     return db.user.findUnique({ where: { id } });
   },
 
+  async updateName(id: string, name: string, db: Db = prisma): Promise<User> {
+    return db.user.update({ where: { id }, data: { name } });
+  },
+
   async existsByEmail(email: string, db: Db = prisma): Promise<boolean> {
     const count = await db.user.count({ where: { email } });
     return count > 0;

@@ -27,6 +27,12 @@
   middleware.
 - Authenticated `GET /api/users/me` profile route with password-hash
    sanitization and service tests.
+- Authenticated `PATCH /api/users/me` profile-name update with validation,
+  password-hash sanitization, and missing-user service tests.
+- Profile update controller authorization tests cover unauthenticated requests
+   and authenticated-subject enforcement.
+- Socket.IO connections authenticate with access JWTs, join private user rooms,
+  and expose typed ticket, assignment, and notification emitters with tests.
 - Customer-scoped conversation list/create endpoints with repository/service
    tests.
 - Customer-owned message persistence with validation and ownership tests;
@@ -42,18 +48,18 @@
 - `/api/knowledge` routes are mounted for authenticated listing and creation.
 - AI chat route retrieves relevant knowledge-context and evaluates groundedness
   before returning a response and escalation signal.
+- Knowledge documents are queued for asynchronous ingestion with stable job IDs;
+   the Python service performs bounded paragraph-aware chunking with focused
+   ingestion tests.
 
 ## In progress / next
 
-1. Add profile update and request authorization tests.
-2. Add RAG retrieval and groundedness evaluation to `/api/chat`.
-3. Define and implement Socket.IO conversation and ticket events.
-4. Implement knowledge upload, BullMQ ingestion, chunking, embeddings, and
-   pgvector retrieval.
-5. Implement ticket assignment, agent availability, notifications, and admin
+1. Add provider-backed embeddings, pgvector writes, and vector retrieval.
+2. Add resource-specific Socket.IO room authorization and frontend subscriptions.
+3. Implement agent availability, notifications, and admin
    workflows.
-6. Add analytics queries, frontend workflows, and Playwright end-to-end tests.
-7. Add production deployment configuration, observability, and cost tracking.
+4. Add analytics queries, frontend workflows, and Playwright end-to-end tests.
+5. Add production deployment configuration, observability, and cost tracking.
 
 ## Definition of done for each feature
 

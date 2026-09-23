@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../src/generated/prisma/client.js';
 
 const findById = vi.hoisted(() => vi.fn());
+const updateName = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/repositories/UserRepository.js', () => ({
-  UserRepository: { findById },
+  UserRepository: { findById, updateName },
 }));
 
 import { UserService } from '../src/services/user.service.js';
@@ -49,5 +50,35 @@ describe('UserService', () => {
       statusCode: 404,
       message: 'User not found',
     });
+  });
+
+  it('updates the profile name without exposing the password hash', async () => {
+    const updatedUser = { ...user, name: 'Updated User' };
+    findById.mockResolvedValue(user);
+    updateName.mockResolvedValue(updatedUser);
+
+    const result = await UserService.updateProfile(user.id, { name: 'Updated User' });
+
+    expect(updateName).toHaveBeenCalledWith(user.id, 'Updated User');
+    expect(result).toEqual({
+      id: user.id,
+      email: user.email,
+      name: 'Updated User',
+      role: user.role,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    });
+    expect(result).not.toHaveProperty('passwordHash');
+  });
+
+  it('does not update a missing profile', async () => {
+    findById.mockResolvedValue(null);
+
+    await expect(UserService.updateProfile('missing-user', { name: 'Updated User' })).rejects.toMatchObject({
+      statusCode: 404,
+      message: 'User not found',
+    });
+    expect(updateName).not.toHaveBeenCalled();
   });
 });

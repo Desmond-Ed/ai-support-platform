@@ -5,9 +5,13 @@ const knowledgeRepository = vi.hoisted(() => ({
   findManyPending: vi.fn(),
   create: vi.fn(),
 }));
+const add = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/repositories/KnowledgeDocumentRepository.js', () => ({
   KnowledgeDocumentRepository: knowledgeRepository,
+}));
+vi.mock('../src/queues/knowledgeQueue.js', () => ({
+  knowledgeIngestionQueue: { add },
 }));
 
 import { KnowledgeService } from '../src/services/knowledge.service.js';
@@ -39,6 +43,7 @@ describe('KnowledgeService', () => {
 
     const result = await KnowledgeService.createDocument({
       title: 'Shipping policy',
+      content: 'Shipping takes 3-5 business days.',
       sourceType: 'UPLOAD',
       uploadedById: 'user-1',
     });
@@ -46,9 +51,15 @@ describe('KnowledgeService', () => {
     expect(result).toEqual(document);
     expect(knowledgeRepository.create).toHaveBeenCalledWith({
       title: 'Shipping policy',
+      content: 'Shipping takes 3-5 business days.',
       sourceType: 'UPLOAD',
       uploadedById: 'user-1',
       status: 'PENDING',
     });
+    expect(add).toHaveBeenCalledWith(
+      'ingest-document',
+      { documentId: 'doc-2' },
+      { jobId: 'knowledge-document:doc-2' },
+    );
   });
 });

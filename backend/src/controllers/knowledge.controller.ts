@@ -16,9 +16,10 @@ export const KnowledgeController = {
   },
 
   async create(req: Request, res: Response): Promise<void> {
-    const payload = req.body as { title?: string; sourceType?: string };
+    const payload = req.body as { title?: string; content?: string; sourceType?: string };
     const document = await KnowledgeService.createDocument({
       title: payload.title ?? '',
+      content: payload.content ?? '',
       sourceType: payload.sourceType ?? 'MANUAL',
       uploadedById: userId(req),
     });

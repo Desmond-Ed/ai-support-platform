@@ -21,33 +21,34 @@ are currently implemented.
 
 ### Health
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/health` | none | Liveness probe. Returns `{ status, service, timestamp }`. |
+| Method | Path          | Auth | Description                                               |
+| ------ | ------------- | ---- | --------------------------------------------------------- |
+| GET    | `/api/health` | none | Liveness probe. Returns `{ status, service, timestamp }`. |
 
 ### Authentication
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| POST | `/api/auth/register` | none | Creates a CUSTOMER account and returns a user plus access token; sets refresh cookie. |
-| POST | `/api/auth/login` | none | Validates credentials and returns a user plus access token; sets refresh cookie. |
-| POST | `/api/auth/refresh` | refresh cookie | Rotates the refresh token and returns a new access token. |
-| POST | `/api/auth/logout` | refresh cookie optional | Revokes the current refresh token and clears the cookie. |
-| POST | `/api/auth/logout-all` | access JWT | Revokes all active refresh tokens for the authenticated user. |
+| Method | Path                   | Auth                    | Description                                                                           |
+| ------ | ---------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| POST   | `/api/auth/register`   | none                    | Creates a CUSTOMER account and returns a user plus access token; sets refresh cookie. |
+| POST   | `/api/auth/login`      | none                    | Validates credentials and returns a user plus access token; sets refresh cookie.      |
+| POST   | `/api/auth/refresh`    | refresh cookie          | Rotates the refresh token and returns a new access token.                             |
+| POST   | `/api/auth/logout`     | refresh cookie optional | Revokes the current refresh token and clears the cookie.                              |
+| POST   | `/api/auth/logout-all` | access JWT              | Revokes all active refresh tokens for the authenticated user.                         |
 
 ### Users
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/users/me` | access JWT | Returns the authenticated user's profile without `passwordHash`. |
+| Method | Path            | Auth       | Description                                                                      |
+| ------ | --------------- | ---------- | -------------------------------------------------------------------------------- |
+| GET    | `/api/users/me` | access JWT | Returns the authenticated user's profile without `passwordHash`.                 |
+| PATCH  | `/api/users/me` | access JWT | Updates the authenticated user's display name and returns the sanitized profile. |
 
 ### Conversations
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/conversations` | access JWT | Lists conversations belonging to the authenticated customer, newest activity first. |
-| POST | `/api/conversations` | access JWT | Creates an empty AI-handled conversation for the authenticated customer. |
-| POST | `/api/conversations/:id/messages` | access JWT | Validates ownership, persists the customer message, calls the AI service, and persists the AI reply. |
+| Method | Path                              | Auth       | Description                                                                                          |
+| ------ | --------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| GET    | `/api/conversations`              | access JWT | Lists conversations belonging to the authenticated customer, newest activity first.                  |
+| POST   | `/api/conversations`              | access JWT | Creates an empty AI-handled conversation for the authenticated customer.                             |
+| POST   | `/api/conversations/:id/messages` | access JWT | Validates ownership, persists the customer message, calls the AI service, and persists the AI reply. |
 
 Message creation calls the Python service at `POST /api/chat`. Node persists
 the customer message first, then persists the returned AI message with

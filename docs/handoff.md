@@ -28,15 +28,13 @@ npm run build
 npx --no-install tsc --noEmit
 ```
 
-The current backend test suite includes `tests/auth.service.test.ts` and
-`tests/auth.middleware.test.ts`, `tests/user.service.test.ts`, and
-`tests/conversation.service.test.ts`. It passes with eighteen tests covering
-registration, login failure behavior, refresh rotation, concurrent-refresh
-rejection, token reuse, logout, logout-all, role middleware, and profile
-sanitization, plus customer-scoped conversation creation, listing, and message
-ownership and AI reply persistence. The Python service byte-compiles
-successfully, and its health test passes. On Windows, install the
-requirements needed for local tests without `uvloop`, which is Unix-only.
+The backend test suite currently passes 33 tests, including authentication,
+profile authorization, conversation ownership, ticket behavior, knowledge
+queue handoff, and Socket.IO authentication. The Python service tests cover
+chat grounding, health, and bounded document chunking; database-backed
+ingestion imports its database driver lazily so local health/chat tests do not
+require it. On Windows, install the requirements needed for database-backed
+ingestion without `uvloop`, which is Unix-only.
 
 ## Auth smoke test expectations
 
@@ -59,6 +57,11 @@ Use `-UseBasicParsing` with Windows PowerShell `Invoke-WebRequest`.
 - Refresh rotation uses a conditional revoke inside the transaction before
   issuing a replacement token, so concurrent requests cannot rotate one
   active token twice.
+- Knowledge document creation persists a `PENDING` row before enqueueing an
+  `ingest-document` BullMQ job with a deterministic document-based job ID.
+- Python ingestion uses paragraph-aware bounded chunks. Provider-backed
+  1536-dimensional embeddings and pgvector writes remain the next ingestion
+  slice.
 
 ## Workspace trap
 

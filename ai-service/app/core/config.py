@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     ENV: str = "development"
     PORT: int = 8000
 
-    DATABASE_URL: str
-    REDIS_URL: str
+    DATABASE_URL: str = ""
+    REDIS_URL: str = ""
 
     # LLM provider — supported: "openai", "deepseek"
     LLM_PROVIDER: str = "openai"

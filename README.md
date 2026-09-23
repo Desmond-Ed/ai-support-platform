@@ -105,9 +105,16 @@ cd frontend && npm install && npm run dev
 
 ## Project status
 
-Currently in Phase 1 (repository/environment setup). See
-[`docs/architecture.md`](docs/architecture.md) for the system design and
-[`docs/ai.md`](docs/ai.md) for the Node↔Python boundary decision log.
+Phase 3 authentication is implemented and verified through Docker. The
+backend currently exposes health and authentication routes, including
+registration, login, refresh-token rotation, logout, and logout-all. The
+remaining conversation, ticket, agent, admin, analytics, and AI workflows
+are planned but not yet implemented. See [`docs/project-plan.md`](docs/project-plan.md)
+for the current delivery state.
+
+Current handoff notes are in [`docs/handoff.md`](docs/handoff.md). The
+architecture, product requirements, database model, and implementation
+memory are maintained in the other documents under `docs/`.
 
 ## Out of scope (documented, not built)
 

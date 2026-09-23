@@ -142,11 +142,8 @@ export const AuthService = {
    * Verifies the presented refresh token, detects reuse of an already-
    * rotated token, and — if everything checks out — rotates it: issues
    * a brand new pair and revokes the old row. Create-new and revoke-old
-   * happen inside one `prisma.$transaction` so a crash mid-rotation
-   * can't leave the old token both revoked *and* absent a replacement
-   * (which would silently log the user out) or, worse, leave the old
-   * token still valid alongside a new one (two live sessions from one
-   * refresh call).
+  * happen inside one `prisma.$transaction`, and revocation is conditional
+  * so concurrent requests cannot rotate the same active token twice.
    */
   async refresh(rawRefreshToken: string): Promise<AuthTokens> {
     verifyRefreshToken(rawRefreshToken); // throws 401 on bad signature / expired exp claim
@@ -183,7 +180,10 @@ export const AuthService = {
     }
 
     return prisma.$transaction(async (tx) => {
-      await RefreshTokenRepository.revoke(row.id, tx);
+      const revoked = await RefreshTokenRepository.revokeIfActive(row.id, tx);
+      if (!revoked) {
+        throw new AppError('Refresh token already used', 401);
+      }
       return issueTokenPair(user, tx);
     });
   },

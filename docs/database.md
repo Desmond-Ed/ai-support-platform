@@ -1,9 +1,11 @@
 # Database Documentation
 
 ## Status
-Phase 2: full schema designed in `prisma/schema.prisma`. **Not yet
-verified by the Prisma CLI** — see "Known limitation" below. This is the
-first thing to run once you have this file.
+The full Prisma schema, initial migration, generated client, and Docker
+PostgreSQL environment are present. Authentication has been exercised against
+the running database: users and hashed refresh-token rows are created,
+refresh tokens rotate, and logout revokes the current token. The broader
+application entities are schema foundations and do not yet have API workflows.
 
 ## Entity list vs. spec (§4)
 
@@ -78,14 +80,9 @@ in the schema comments: `Conversation.createdAt` (daily/weekly charts),
 - An agent being unassigned from a conversation is `SetNull`
   (`Conversation.agentId`), not a cascade delete of the conversation.
 
-## Known limitation
+## Verification command
 
-**`prisma generate` / `prisma validate` / `prisma migrate dev` have not
-been run against this schema yet.** The build sandbox used to write this
-schema cannot reach `binaries.prisma.sh` (network policy blocks it).
-The schema has been manually checked for brace/paren balance and typical
-Prisma gotchas (ambiguous relations given explicit `@relation` names,
-etc.) but **this is not a substitute for the real CLI check**. Run:
+Run the following from `backend` after schema changes:
 
 ```bash
 cd backend
@@ -95,6 +92,6 @@ npx prisma migrate dev --name init_phase2_schema
 npx prisma generate
 ```
 
-on your machine (where this worked fine in Phase 1's Docker build) and
-report back the output — this is the Phase 2 equivalent of Phase 1's
-`docker-compose up` verification step.
+The committed initial migration is under
+`backend/prisma/migrations/20260921143341_init_phase2_schema/`. Do not edit a
+generated client by hand; regenerate it from the schema.

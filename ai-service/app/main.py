@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
+from app.api.chat import router as chat_router
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -25,6 +26,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
-# Phase 6+ routers mount here: /api/chat (RAG query), /api/ingest
+# Phase 7+ routers mount here: /api/ingest
 # (knowledge-base ingestion), /api/evaluate (groundedness scoring).

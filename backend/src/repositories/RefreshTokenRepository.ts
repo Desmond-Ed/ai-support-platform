@@ -42,6 +42,14 @@ export const RefreshTokenRepository = {
     });
   },
 
+  async revokeIfActive(id: string, db: Db = prisma): Promise<boolean> {
+    const result = await db.refreshToken.updateMany({
+      where: { id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return result.count === 1;
+  },
+
   // Revoke every active token for a user. Called on logout-all, password
   // change, and — critically — on refresh-token reuse detection, where
   // the standard response is "assume the whole family is compromised,

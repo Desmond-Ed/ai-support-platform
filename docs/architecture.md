@@ -1,11 +1,7 @@
-# Architecture — AI-Powered Customer Support Platform
+# Architecture - AI-Powered Customer Support Platform
 
-> Note: I don't have access to the project's architecture/QA doc in this
-> session (it wasn't attached to the conversation or project workspace), so
-> the diagram and boundaries below are reconstructed from the stack and
-> operating rules given directly in the Phase 1 brief. If the source spec
-> has additional detail (e.g. specific queue topology, additional services),
-> reconcile this doc against it before Phase 2 and I'll update it.
+This document records the current service boundaries and the implementation
+state verified in the repository and Docker Compose environment.
 
 ## System diagram
 
@@ -80,7 +76,18 @@ flowchart TB
 
 ## Status
 
-Phase 1 (this doc): structure only, no request path is implemented yet
-beyond `/api/health` on both Node and Python services. This diagram will
-be revisited as each phase lands real endpoints/queues so it stays accurate
-rather than aspirational.
+The backend currently exposes `/api/health`, the authentication routes
+`/api/auth/register`, `/login`, `/refresh`, `/logout`, and `/logout-all`, plus
+the authenticated profile route `/api/users/me` and customer-scoped
+conversation and customer-message routes under `/api/conversations`.
+Customer messages call Python's `/api/chat` synchronously; Node remains the
+only writer of conversation and message application state.
+Authentication is Docker-verified: access JWTs are signed, refresh tokens are
+stored as SHA-256 hashes in PostgreSQL, refresh rotates the token, and logout
+revokes it. Each refresh JWT includes a random `jti` so tokens issued for the
+same user in the same second remain distinct; `jti` is not the Prisma row ID.
+
+The backend runs on port 4000, the AI service on 8000, and the frontend on
+5173 in Docker Compose. Conversation state, Socket.IO event flows, BullMQ
+workers, RAG, knowledge ingestion, tickets, agent tooling, admin workflows,
+and analytics remain planned work.

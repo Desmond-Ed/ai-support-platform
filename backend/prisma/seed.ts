@@ -47,7 +47,23 @@ async function main(): Promise<void> {
     },
   });
 
-  console.log('Seeded:', { admin: admin.email, agent: agent.email, customer: customer.email });
+  const requestedCustomer = await prisma.user.upsert({
+    where: { email: 'lo-customer@example.com' },
+    update: {},
+    create: {
+      email: 'lo-customer@example.com',
+      passwordHash,
+      name: 'Lo Customer',
+      role: Role.CUSTOMER,
+    },
+  });
+
+  console.log('Seeded:', {
+    admin: admin.email,
+    agent: agent.email,
+    customer: customer.email,
+    requestedCustomer: requestedCustomer.email,
+  });
   console.log('All dev accounts use password: DevPassword123!');
 }
 

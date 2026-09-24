@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    command: ['node', 'dist/server.js']
+    volumes: !reset []
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile.prod
+    command: ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000']
+    volumes: !reset []
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - '8080:80'
+    command: ['nginx', '-g', 'daemon off;']
+    volumes: !reset []

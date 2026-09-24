@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, type Socket } from 'socket.io';
+import { prisma } from '../config/db.js';
 import { env } from '../config/env.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { logger } from '../utils/logger.js';
@@ -15,6 +16,44 @@ export type RealtimeEvents = {
   agent_assigned: { ticketId: string; agentId: string };
   notification: { type: string; message: string; resourceId?: string };
 };
+
+export type ResourceSubscription = {
+  resource: 'conversation' | 'ticket';
+  resourceId: string;
+};
+
+export async function canSubscribeToResource(
+  user: { sub: string; role: string },
+  subscription: ResourceSubscription,
+): Promise<boolean> {
+  if (subscription.resource === 'conversation') {
+    return Boolean(
+      await prisma.conversation.findFirst({
+        where:
+          user.role === 'CUSTOMER'
+            ? { id: subscription.resourceId, customerId: user.sub }
+            : { id: subscription.resourceId, OR: [{ customerId: user.sub }, { agentId: user.sub }] },
+        select: { id: true },
+      }),
+    );
+  }
+
+  return Boolean(
+    await prisma.ticket.findFirst({
+      where:
+        user.role === 'CUSTOMER'
+          ? { id: subscription.resourceId, customerId: user.sub }
+          : {
+              id: subscription.resourceId,
+              OR: [
+                { customerId: user.sub },
+                { assignments: { some: { agentId: user.sub, unassignedAt: null } } },
+              ],
+            },
+      select: { id: true },
+    }),
+  );
+}
 
 function accessToken(socket: Socket): string {
   const authToken = socket.handshake.auth?.token;
@@ -44,9 +83,13 @@ export function authenticateSocket(socket: Socket, next: (error?: Error) => void
 }
 
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
+  const corsOrigins = [
+    ...env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
+    ...(env.NODE_ENV === 'development' ? ['http://localhost:8080'] : []),
+  ];
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: env.CORS_ORIGIN,
+      origin: corsOrigins,
       credentials: true,
     },
   });
@@ -56,6 +99,39 @@ export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io.on('connection', (socket) => {
     const userId = socket.data.user.sub;
     void socket.join(socketRooms.user(userId));
+
+    socket.on('subscribe', async (subscription: ResourceSubscription, acknowledge?: (response: { ok: boolean }) => void) => {
+      if (
+        !subscription ||
+        !['conversation', 'ticket'].includes(subscription.resource) ||
+        typeof subscription.resourceId !== 'string' ||
+        !subscription.resourceId
+      ) {
+        acknowledge?.({ ok: false });
+        return;
+      }
+
+      const canSubscribe = await canSubscribeToResource(socket.data.user, subscription);
+
+      if (!canSubscribe) {
+        acknowledge?.({ ok: false });
+        return;
+      }
+
+      void socket.join(socketRooms[subscription.resource](subscription.resourceId));
+      acknowledge?.({ ok: true });
+    });
+
+    socket.on('unsubscribe', (subscription: ResourceSubscription) => {
+      if (
+        subscription &&
+        ['conversation', 'ticket'].includes(subscription.resource) &&
+        typeof subscription.resourceId === 'string' &&
+        subscription.resourceId
+      ) {
+        void socket.leave(socketRooms[subscription.resource](subscription.resourceId));
+      }
+    });
     logger.info('Socket connected', { socketId: socket.id });
 
     socket.on('disconnect', (reason) => {

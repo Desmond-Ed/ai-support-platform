@@ -10,11 +10,15 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 export function createApp(): Express {
   const app = express();
+  const corsOrigins = [
+    ...env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
+    ...(env.NODE_ENV === 'development' ? ['http://localhost:8080'] : []),
+  ];
 
   app.use(helmet());
   app.use(
     cors({
-      origin: env.CORS_ORIGIN,
+      origin: corsOrigins,
       credentials: true, // required for httpOnly refresh-token cookie
     }),
   );

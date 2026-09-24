@@ -105,12 +105,10 @@ cd frontend && npm install && npm run dev
 
 ## Project status
 
-Phase 3 authentication is implemented and verified through Docker. The
-backend currently exposes health and authentication routes, including
-registration, login, refresh-token rotation, logout, and logout-all. The
-remaining conversation, ticket, agent, admin, analytics, and AI workflows
-are planned but not yet implemented. See [`docs/project-plan.md`](docs/project-plan.md)
-for the current delivery state.
+Authentication, customer conversations/tickets, knowledge ingestion, realtime
+notifications, admin visibility, analytics overview, and the first operations
+dashboard are implemented. See [`docs/project-plan.md`](docs/project-plan.md)
+for the current delivery state and remaining hardening work.
 
 Current handoff notes are in [`docs/handoff.md`](docs/handoff.md). The
 architecture, product requirements, database model, and implementation

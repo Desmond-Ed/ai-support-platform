@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
+from app.core.config import get_settings
 from app.evaluation.grounding import evaluate_grounding
 from app.llm.client import get_llm
 from app.models.chat import ChatRequest, ChatResponse
+from app.observability.metrics import usage_and_cost
 from app.retrieval.service import retrieve_context
 
 router = APIRouter()
@@ -49,10 +51,18 @@ async def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=503, detail="AI service unavailable") from exc
 
     content = response.content if isinstance(response.content, str) else str(response.content)
+    usage = usage_and_cost(
+        response,
+        get_settings().LLM_INPUT_COST_PER_MILLION,
+        get_settings().LLM_OUTPUT_COST_PER_MILLION,
+    )
     grounded, confidence, should_escalate = evaluate_grounding(contexts, content)
     return ChatResponse(
         content=content,
         confidence=round(float(confidence), 4),
         grounded=grounded,
         should_escalate=should_escalate,
+        input_tokens=int(usage["input_tokens"]),
+        output_tokens=int(usage["output_tokens"]),
+        estimated_cost_usd=float(usage["estimated_cost_usd"]),
     )

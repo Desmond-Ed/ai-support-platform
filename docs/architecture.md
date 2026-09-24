@@ -91,8 +91,11 @@ The backend runs on port 4000, the AI service on 8000, and the frontend on
 5173 in Docker Compose. Knowledge document creation enqueues asynchronous
 ingestion after persisting a pending document; the AI service performs bounded
 paragraph-aware chunking. Provider-backed embeddings and pgvector writes are
-still the next ingestion slice. Socket.IO authenticates access JWTs during connection,
+implemented with `text-embedding-3-small` and validated at 1536 dimensions;
+query retrieval uses pgvector similarity with a degraded fallback. Socket.IO authenticates access JWTs during connection,
 places clients in private user rooms, and provides server-side emitters for
 `ticket_updated`, `agent_assigned`, and `notification`. Resource-specific room
-authorization and frontend subscriptions remain planned work. BullMQ workers,
-ticket tooling, admin workflows, and analytics remain planned work.
+authorization is enforced against conversation ownership and ticket customer or
+active assignment before room joins; the frontend exposes a reusable client and
+event hook. BullMQ workers, ticket tooling, admin workflows, and analytics
+remain planned work.

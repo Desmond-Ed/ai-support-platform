@@ -58,3 +58,17 @@ def test_chat_escalates_when_no_relevant_context(monkeypatch):
     assert payload["grounded"] is False
     assert payload["confidence"] == 0.0
     assert payload["should_escalate"] is True
+
+
+def test_chat_escalates_when_retrieval_is_unavailable(monkeypatch):
+    monkeypatch.setattr(chat_api, "retrieve_context", lambda query, limit=4: [])
+    monkeypatch.setattr(chat_api, "get_llm", lambda: FakeUngroundedLLM())
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={"conversation_id": "conversation-789", "message": "What is my refund status?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["should_escalate"] is True

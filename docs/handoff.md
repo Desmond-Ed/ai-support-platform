@@ -28,10 +28,11 @@ npm run build
 npx --no-install tsc --noEmit
 ```
 
-The backend test suite currently passes 33 tests, including authentication,
-profile authorization, conversation ownership, ticket behavior, knowledge
-queue handoff, and Socket.IO authentication. The Python service tests cover
-chat grounding, health, and bounded document chunking; database-backed
+The backend test suite currently passes 37 tests, including authentication,
+profile authorization, conversation ownership, ticket behavior, notification
+behavior, knowledge queue handoff, and Socket.IO authentication. The Python
+service tests currently pass 9 tests covering chat grounding, health, bounded
+document chunking, and embeddings; database-backed
 ingestion imports its database driver lazily so local health/chat tests do not
 require it. On Windows, install the requirements needed for database-backed
 ingestion without `uvloop`, which is Unix-only.
@@ -60,8 +61,13 @@ Use `-UseBasicParsing` with Windows PowerShell `Invoke-WebRequest`.
 - Knowledge document creation persists a `PENDING` row before enqueueing an
   `ingest-document` BullMQ job with a deterministic document-based job ID.
 - Python ingestion uses paragraph-aware bounded chunks. Provider-backed
-  1536-dimensional embeddings and pgvector writes remain the next ingestion
-  slice.
+  1536-dimensional embeddings and pgvector writes are implemented with a
+  conservative degraded path when provider configuration is unavailable.
+- The frontend operations dashboard supports login, customer ticket creation
+  and history, agent/admin queue operations, assignment, status changes,
+  notifications, and analytics summaries.
+- The live local frontend is currently served at `http://localhost:8080` when
+  run directly with Vite; Compose still uses port `5173`.
 
 ## Workspace trap
 
@@ -74,3 +80,13 @@ docker exec asp-backend sed -n '1,30p' /app/src/routes/index.ts
 ```
 
 It must show `authRouter` and `router.use('/auth', authRouter)`.
+
+## Validation status
+
+- Backend: 37 tests, build, and lint pass.
+- AI service: 9 tests pass.
+- Frontend: build and lint pass.
+- Live customer API flow passes login, conversation creation, ticket creation,
+  and ticket listing.
+- Playwright Chromium installation is currently blocked by external download
+  timeouts, so browser E2E execution remains pending.

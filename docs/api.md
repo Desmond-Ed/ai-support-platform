@@ -58,12 +58,40 @@ persisted. Validation uses `registerSchema`, `loginSchema`, and
 `createMessageSchema`. Errors use the shared `{ error: { message, details? } }`
 shape.
 
+### Tickets
+
+| Method | Path | Auth | Description |
+| ------ | ---- | ---- | ----------- |
+| GET | `/api/tickets` | access JWT | Lists tickets belonging to the authenticated customer. |
+| POST | `/api/tickets` | access JWT | Creates a ticket for an owned conversation. |
+| GET | `/api/tickets/agent` | AGENT or ADMIN JWT | Lists tickets assigned to the authenticated agent. |
+| PATCH | `/api/tickets/availability` | AGENT or ADMIN JWT | Updates the authenticated agent's availability. |
+| PATCH | `/api/tickets/:id/status` | AGENT or ADMIN JWT | Updates a ticket status. |
+| PATCH | `/api/tickets/:id/assign` | AGENT or ADMIN JWT | Assigns an agent to a ticket. |
+
 The current Python chat implementation calls the configured LLM directly.
 RAG retrieval and groundedness evaluation remain future additions.
 
-## Endpoints planned (per phase, not yet built)
+### Notifications
 
-- Next — Add RAG retrieval and groundedness evaluation to `POST /api/chat`.
-- Later — Tickets: `GET/POST /api/tickets`, `PATCH /api/tickets/:id`
-- Later — Agent/Admin: agent queue endpoints, `GET /api/knowledge`,
-  `POST /api/knowledge`, `GET /api/analytics`
+| Method | Path | Auth | Description |
+| ------ | ---- | ---- | ----------- |
+| GET | `/api/notifications` | access JWT | Lists the user's notifications; `?unread=true` filters unread items. |
+| PATCH | `/api/notifications/:id/read` | access JWT | Marks one owned notification as read. |
+| PATCH | `/api/notifications/read-all` | access JWT | Marks all notifications for the user as read. |
+
+Ticket creation, assignment, and status changes persist notifications and emit
+the existing Socket.IO `notification` event.
+
+### Admin and analytics
+
+| Method | Path | Auth | Description |
+| ------ | ---- | ---- | ----------- |
+| GET | `/api/admin/users` | ADMIN | Lists sanitized user records. |
+| PATCH | `/api/admin/users/:id` | ADMIN | Updates a user's role or active state. |
+| GET | `/api/admin/knowledge` | ADMIN | Lists all knowledge documents and ingestion status. |
+| GET | `/api/analytics/overview` | AGENT or ADMIN | Returns ticket, conversation, AI-resolution, notification, and knowledge counts. |
+
+## Future endpoints
+
+- Richer time-series analytics, audit-log views, and full knowledge moderation.

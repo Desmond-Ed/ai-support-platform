@@ -14,12 +14,20 @@ const conversationRepository = vi.hoisted(() => ({
   findByIdForCustomer: vi.fn(),
 }));
 
+const notificationService = vi.hoisted(() => ({
+  create: vi.fn(),
+}));
+
 vi.mock('../src/repositories/TicketRepository.js', () => ({
   TicketRepository: ticketRepository,
 }));
 
 vi.mock('../src/repositories/ConversationRepository.js', () => ({
   ConversationRepository: conversationRepository,
+}));
+
+vi.mock('../src/services/notification.service.js', () => ({
+  NotificationService: notificationService,
 }));
 
 import { TicketService } from '../src/services/ticket.service.js';

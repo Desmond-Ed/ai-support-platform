@@ -1,6 +1,7 @@
 import { AppError } from '../utils/AppError.js';
 import { ConversationRepository } from '../repositories/ConversationRepository.js';
 import { TicketRepository } from '../repositories/TicketRepository.js';
+import { NotificationService } from './notification.service.js';
 import type { AgentAvailability, Ticket, TicketAssignment } from '../generated/prisma/client.js';
 
 export interface CreateTicketInput {
@@ -28,7 +29,7 @@ export const TicketService = {
       throw new AppError('Conversation not found', 404);
     }
 
-    return TicketRepository.create({
+    const ticket = await TicketRepository.create({
       conversationId,
       customerId,
       subject: input.subject,
@@ -36,6 +37,13 @@ export const TicketService = {
       priority: input.priority ?? 'MEDIUM',
       status: 'OPEN',
     });
+
+    await NotificationService.create(customerId, 'TICKET_CREATED', {
+      type: 'TICKET_CREATED',
+      message: `Ticket ${ticket.subject} was created`,
+      resourceId: ticket.id,
+    });
+    return ticket;
   },
 
   async assignAgent(ticketId: string, agentId: string): Promise<TicketAssignment> {
@@ -44,7 +52,20 @@ export const TicketService = {
       throw new AppError('Ticket not found', 404);
     }
 
-    return TicketRepository.assignAgent(ticketId, agentId);
+    const assignment = await TicketRepository.assignAgent(ticketId, agentId);
+    await Promise.all([
+      NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
+        type: 'TICKET_STATUS_CHANGED',
+        message: 'An agent was assigned to your ticket',
+        resourceId: ticketId,
+      }),
+      NotificationService.create(agentId, 'TICKET_STATUS_CHANGED', {
+        type: 'TICKET_STATUS_CHANGED',
+        message: 'A ticket was assigned to you',
+        resourceId: ticketId,
+      }),
+    ]);
+    return assignment;
   },
 
   async updateStatus(
@@ -56,7 +77,13 @@ export const TicketService = {
       throw new AppError('Ticket not found', 404);
     }
 
-    return TicketRepository.updateStatus(ticketId, status);
+    const updatedTicket = await TicketRepository.updateStatus(ticketId, status);
+    await NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
+      type: 'TICKET_STATUS_CHANGED',
+      message: `Ticket status changed to ${status}`,
+      resourceId: ticketId,
+    });
+    return updatedTicket;
   },
 
   async setAgentAvailability(

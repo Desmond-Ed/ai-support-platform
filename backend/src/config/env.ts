@@ -16,7 +16,7 @@ const envSchema = z.object({
 
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
 
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  CORS_ORIGIN: z.string().default('http://localhost:8080,http://localhost:5173'),
 });
 
 // Fail fast: the app should not boot with a missing/invalid config.

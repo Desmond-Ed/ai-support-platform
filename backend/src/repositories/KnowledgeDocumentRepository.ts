@@ -4,6 +4,10 @@ import type { KnowledgeDocument, Prisma } from '../generated/prisma/client.js';
 type Db = Prisma.TransactionClient | typeof prisma;
 
 export const KnowledgeDocumentRepository = {
+  async findMany(db: Db = prisma): Promise<KnowledgeDocument[]> {
+    return db.knowledgeDocument.findMany({ orderBy: { createdAt: 'desc' } });
+  },
+
   async findManyByUploader(uploadedById: string, db: Db = prisma): Promise<KnowledgeDocument[]> {
     return db.knowledgeDocument.findMany({
       where: { uploadedById },

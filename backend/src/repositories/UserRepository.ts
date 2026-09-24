@@ -14,6 +14,13 @@ import type { Prisma, Role, User } from '../generated/prisma/client.js';
 type Db = Prisma.TransactionClient | typeof prisma;
 
 export const UserRepository = {
+  async findMany(db: Db = prisma) {
+    return db.user.findMany({
+      select: { id: true, email: true, name: true, role: true, isActive: true, createdAt: true, updatedAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  },
+
   async findByEmail(email: string, db: Db = prisma): Promise<User | null> {
     return db.user.findUnique({ where: { email } });
   },
@@ -24,6 +31,10 @@ export const UserRepository = {
 
   async updateName(id: string, name: string, db: Db = prisma): Promise<User> {
     return db.user.update({ where: { id }, data: { name } });
+  },
+
+  async updateAdminFields(id: string, data: { role?: Role; isActive?: boolean }, db: Db = prisma): Promise<User> {
+    return db.user.update({ where: { id }, data });
   },
 
   async existsByEmail(email: string, db: Db = prisma): Promise<boolean> {

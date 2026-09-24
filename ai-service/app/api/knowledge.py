@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
+from app.embeddings.client import MODEL, embed_documents
 from app.ingestion.chunking import chunk_text
 
 router = APIRouter()
@@ -49,7 +50,8 @@ async def ingest_knowledge_document(payload: dict) -> dict:
                 if not chunks:
                     raise HTTPException(status_code=400, detail="Document content is empty")
 
-                for chunk in chunks:
+                vectors = embed_documents([chunk["content"] for chunk in chunks])
+                for chunk, vector in zip(chunks, vectors, strict=True):
                     cur.execute(
                         """
                         INSERT INTO knowledge_chunks (id, "documentId", content, "chunkIndex", "createdAt")
@@ -63,9 +65,9 @@ async def ingest_knowledge_document(payload: dict) -> dict:
                     cur.execute(
                         """
                         INSERT INTO embeddings (id, "chunkId", model, vector, "createdAt")
-                        VALUES (gen_random_uuid(), %s, %s, NULL, NOW())
+                        VALUES (gen_random_uuid(), %s, %s, %s::vector, NOW())
                         """,
-                        (chunk_id, "text-embedding-3-small"),
+                        (chunk_id, MODEL, f"[{','.join(str(value) for value in vector)}]"),
                     )
 
                 cur.execute(

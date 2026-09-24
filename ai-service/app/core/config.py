@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     # DeepSeek base URL override (keep default unless self-hosting)
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    LLM_INPUT_COST_PER_MILLION: float = 0.15
+    LLM_OUTPUT_COST_PER_MILLION: float = 0.60
 
     # Node backend base URL, for any AI-service -> Node callbacks if ever needed.
     BACKEND_URL: str = "http://localhost:4000"

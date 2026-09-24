@@ -51,15 +51,45 @@
 - Knowledge documents are queued for asynchronous ingestion with stable job IDs;
    the Python service performs bounded paragraph-aware chunking with focused
    ingestion tests.
+- Knowledge ingestion generates validated 1536-dimensional provider embeddings,
+   persists them to pgvector, and query retrieval uses vector similarity with a
+   conservative degraded path.
+- Socket.IO resource subscriptions now verify conversation ownership or ticket
+   customer/assignment access, and the frontend has a reusable authenticated
+   client plus realtime event hook.
+- Agent availability is exposed through a validated, role-protected endpoint
+   using the authenticated agent identity.
 
-## In progress / next
+## Completed next-phase work
 
-1. Add provider-backed embeddings, pgvector writes, and vector retrieval.
-2. Add resource-specific Socket.IO room authorization and frontend subscriptions.
-3. Implement agent availability, notifications, and admin
-   workflows.
-4. Add analytics queries, frontend workflows, and Playwright end-to-end tests.
-5. Add production deployment configuration, observability, and cost tracking.
+- Notifications are persisted, listed, marked read, and emitted over Socket.IO
+   for ticket creation, assignment, and status changes.
+- Admin user/knowledge workflows and role-protected analytics overview are
+   implemented.
+- Frontend operations dashboard supports email/password login, customer ticket
+   creation and history, agent/admin assigned queues, assign-to-self, ticket
+   status updates, notifications, and analytics summaries.
+- Playwright smoke-test project and production Docker Compose override exist.
+- AI responses expose token usage and estimated cost, with structured usage
+   logging.
+
+## Remaining next
+
+1. Install the Playwright Chromium browser in a network-enabled environment and
+   run the smoke suite; expand coverage beyond the health/UI smoke test.
+2. Add time-series analytics, audit-log views, and full knowledge moderation.
+3. Configure hosted deployment secrets, external tracing, and durable cost
+    aggregation.
+
+## Phase validation record
+
+- Backend: 37 Vitest tests passed; TypeScript build and ESLint passed.
+- AI service: 9 pytest tests passed.
+- Frontend: TypeScript/Vite build and ESLint passed.
+- Live API smoke: customer login, conversation creation, ticket creation, and
+   customer ticket listing passed.
+- Playwright browser installation remains blocked by external Chromium download
+   timeouts; the test project and dependencies are present.
 
 ## Definition of done for each feature
 

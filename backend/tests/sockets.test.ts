@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const verifyAccessToken = vi.hoisted(() => vi.fn());
+const findFirst = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/utils/jwt.js', () => ({ verifyAccessToken }));
+vi.mock('../src/config/db.js', () => ({
+  prisma: {
+    conversation: { findFirst },
+    ticket: { findFirst },
+  },
+}));
 
-import { authenticateSocket, socketRooms } from '../src/sockets/index.js';
+import { authenticateSocket, canSubscribeToResource, socketRooms } from '../src/sockets/index.js';
 
 function socket(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,5 +50,26 @@ describe('Socket.IO authentication', () => {
     expect(socketRooms.user('user-1')).toBe('user:user-1');
     expect(socketRooms.conversation('conversation-1')).toBe('conversation:conversation-1');
     expect(socketRooms.ticket('ticket-1')).toBe('ticket:ticket-1');
+  });
+
+  it('allows a subscribed customer-owned resource', async () => {
+    findFirst.mockResolvedValue({ id: 'conversation-1' });
+
+    await expect(
+      canSubscribeToResource(
+        { sub: 'user-1', role: 'CUSTOMER' },
+        { resource: 'conversation', resourceId: 'conversation-1' },
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('rejects a subscription when the resource is not owned', async () => {
+    findFirst.mockResolvedValue(null);
+    await expect(
+      canSubscribeToResource(
+        { sub: 'user-1', role: 'CUSTOMER' },
+        { resource: 'ticket', resourceId: 'ticket-1' },
+      ),
+    ).resolves.toBe(false);
   });
 });

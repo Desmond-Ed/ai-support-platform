@@ -15,6 +15,44 @@ async function login(page: any, credentials: { email: string; password: string }
   await page.waitForTimeout(1000);
 }
 
+function ticketCard(page: any, subject: string) {
+  return page.getByRole('article').filter({
+    has: page.getByRole('heading', { name: subject, exact: true }),
+  });
+}
+
+async function createTicketAssignedToAgent(agentPage: any, browser: any, request: any): Promise<string> {
+  const { token, agentId } = await agentPage.evaluate(() => ({
+    token: localStorage.getItem('accessToken'),
+    agentId: localStorage.getItem('userId'),
+  }));
+  if (!token || !agentId) throw new Error('Agent session is missing credentials');
+
+  const customerContext = await browser.newContext();
+  try {
+    const customerPage = await customerContext.newPage();
+    await login(customerPage, TEST_CUSTOMER);
+    const subject = `E2E ${Date.now()}`;
+    await customerPage.fill('input[placeholder="What do you need help with?"]', subject);
+    const ticketResponsePromise = customerPage.waitForResponse(
+      (response: any) => response.url().endsWith('/api/tickets') && response.request().method() === 'POST',
+    );
+    await customerPage.click('button:has-text("Create ticket")');
+    const ticketResponse = await ticketResponsePromise;
+    const { ticket } = await ticketResponse.json();
+    await expect(ticketCard(customerPage, subject)).toBeVisible({ timeout: 10000 });
+
+    const assignmentResponse = await request.patch(`${BACKEND_URL}/api/tickets/${ticket.id}/assign`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { agentId },
+    });
+    if (!assignmentResponse.ok()) throw new Error('Unable to assign setup ticket to agent');
+    return subject;
+  } finally {
+    await customerContext.close();
+  }
+}
+
 test.describe('Notifications', () => {
   test('customer sees notifications panel', async ({ page }) => {
     await login(page, TEST_CUSTOMER);
@@ -35,27 +73,20 @@ test.describe('Notifications', () => {
 });
 
 test.describe('Realtime updates', () => {
-  test('agent sees ticket created notification when customer creates ticket', async ({ page, context }) => {
+  test('agent sees ticket created notification when customer creates ticket', async ({ context, browser, request }) => {
     // Login as agent in one tab
     const agentPage = await context.newPage();
     await login(agentPage, TEST_AGENT);
     await expect(agentPage.locator('text=Assigned ticket queue')).toBeVisible();
 
-    // Login as customer in another tab
-    const customerPage = await context.newPage();
-    await login(customerPage, TEST_CUSTOMER);
-
-    // Customer creates a ticket
-    const subject = `Realtime test ${Date.now()}`;
-    await customerPage.fill('input[placeholder="What do you need help with?"]', subject);
-    await customerPage.click('button:has-text("Create ticket")');
-    await expect(customerPage.locator(`text=${subject}`)).toBeVisible({ timeout: 10000 });
+    // Create a unique customer ticket and assign it so it appears in this agent's queue.
+    const subject = await createTicketAssignedToAgent(agentPage, browser, request);
 
     // Agent should see the new ticket (via realtime or refresh)
     await agentPage.waitForTimeout(3000);
     await agentPage.reload();
     await agentPage.waitForTimeout(1000);
-    await expect(agentPage.locator(`text=${subject}`)).toBeVisible({ timeout: 10000 });
+    await expect(ticketCard(agentPage, subject)).toBeVisible({ timeout: 10000 });
   });
 });
 

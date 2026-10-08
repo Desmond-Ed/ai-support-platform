@@ -37,10 +37,14 @@ test.describe('API health checks', () => {
 test.describe('Conversation flow', () => {
   test('customer can start conversation and AI responds', async ({ page }) => {
     await login(page, TEST_CUSTOMER);
-    await page.fill('input[placeholder="What do you need help with?"]', 'How do I reset my password?');
+    const subject = `E2E ${Date.now()} How do I reset my password?`;
+    await page.fill('input[placeholder="What do you need help with?"]', subject);
     await page.click('button:has-text("Create ticket")');
     await page.waitForTimeout(3000);
-    await expect(page.locator('text=How do I reset my password?')).toBeVisible({ timeout: 10000 });
+    const card = page.getByRole('article').filter({
+      has: page.getByRole('heading', { name: subject, exact: true }),
+    });
+    await expect(card.getByRole('heading', { name: subject, exact: true })).toBeVisible({ timeout: 10000 });
   });
 });
 
@@ -51,12 +55,15 @@ test.describe('Ticket priorities', () => {
 
   ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].forEach((priority) => {
     test(`customer can create ${priority} priority ticket`, async ({ page }) => {
-      const subject = `${priority} ticket ${Date.now()}`;
+      const subject = `E2E ${priority} ${Date.now()}`;
       await page.fill('input[placeholder="What do you need help with?"]', subject);
       await page.selectOption('select', priority);
       await page.click('button:has-text("Create ticket")');
-      await expect(page.locator(`text=${subject}`)).toBeVisible({ timeout: 10000 });
-      await expect(page.locator(`text=${priority}`)).toBeVisible({ timeout: 5000 });
+      const card = page.getByRole('article').filter({
+        has: page.getByRole('heading', { name: subject, exact: true }),
+      });
+      await expect(card.getByRole('heading', { name: subject, exact: true })).toBeVisible({ timeout: 10000 });
+      await expect(card.getByText(priority, { exact: true })).toBeVisible({ timeout: 5000 });
     });
   });
 });

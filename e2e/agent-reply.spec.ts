@@ -47,6 +47,18 @@ test('assigned agent can reply, while customer and resolved conversation are rej
   });
   expect(agentReply.status()).toBe(201);
 
+  const notificationsResponse = await request.get(`${BACKEND_URL}/api/notifications`, {
+    headers: customerHeaders,
+  });
+  expect(notificationsResponse.status()).toBe(200);
+  const { notifications } = await notificationsResponse.json();
+  expect(notifications).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: 'AGENT_REPLIED',
+      payload: expect.objectContaining({ resourceId: conversation.id }),
+    }),
+  ]));
+
   const customerReply = await request.post(messageUrl, {
     headers: customerHeaders,
     data: { content: 'I should not be allowed to reply as an agent.' },

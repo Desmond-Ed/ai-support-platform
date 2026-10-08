@@ -119,13 +119,14 @@ test.describe('Ticket status transitions', () => {
     const subject = await createTicketAssignedToAgent(page, browser, request);
     const card = ticketCard(page, subject);
     const statusSelect = card.locator('select').filter({ hasText: 'OPEN' }).first();
-    if (await statusSelect.isVisible()) {
-      await statusSelect.selectOption('IN_PROGRESS');
-      await expect(statusSelect).toHaveValue('IN_PROGRESS');
-      await statusSelect.selectOption('RESOLVED');
-      await expect(statusSelect).toHaveValue('RESOLVED');
-      await statusSelect.selectOption('CLOSED');
-      await expect(statusSelect).toHaveValue('CLOSED');
-    }
+    await expect(statusSelect).toBeVisible();
+    await statusSelect.selectOption('IN_PROGRESS');
+    await expect(statusSelect).toHaveValue('IN_PROGRESS');
+    await statusSelect.selectOption('RESOLVED');
+    await expect(statusSelect).toHaveValue('RESOLVED');
+    await statusSelect.selectOption('CLOSED');
+    await expect(statusSelect).toHaveValue('CLOSED');
+    await page.reload();
+    await expect(ticketCard(page, subject).locator('select')).toHaveValue('CLOSED');
   });
 });

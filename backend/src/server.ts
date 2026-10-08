@@ -4,8 +4,9 @@ import { env } from './config/env.js';
 import { startKnowledgeIngestionWorker } from './queues/knowledgeQueue.js';
 import { logger } from './utils/logger.js';
 import { initSocketServer } from './sockets/index.js';
-import { emitNotification } from './sockets/index.js';
+import { emitConversationMessage, emitNotification, emitTicketUpdated } from './sockets/index.js';
 import { NotificationService } from './services/notification.service.js';
+import { ConversationService } from './services/conversation.service.js';
 
 const app = createApp();
 const httpServer = createServer(app);
@@ -13,7 +14,19 @@ const httpServer = createServer(app);
 // Socket.IO is attached to the same HTTP server (not a separate port) so
 // Railway only needs to expose one port for the backend service.
 const io = initSocketServer(httpServer);
-NotificationService.setEmitter((userId, payload) => emitNotification(io, [userId], payload));
+NotificationService.setEmitter((userId, payload) => {
+  emitNotification(io, [userId], payload);
+
+  if (payload.type === 'TICKET_RESOLVED' && payload.resourceId) {
+    emitTicketUpdated(io, [userId], {
+      ticketId: payload.resourceId,
+      status: 'RESOLVED',
+    });
+  }
+});
+ConversationService.setEmitter((conversationId, payload) => {
+  emitConversationMessage(io, conversationId, payload);
+});
 startKnowledgeIngestionWorker();
 
 httpServer.listen(env.PORT, () => {

@@ -1,7 +1,10 @@
 import type { Request, Response } from 'express';
 import { AppError } from '../utils/AppError.js';
 import { ConversationService } from '../services/conversation.service.js';
-import type { CreateMessageInput } from '../validators/conversation.validators.js';
+import type {
+  CreateAgentMessageInput,
+  CreateMessageInput,
+} from '../validators/conversation.validators.js';
 
 function customerId(req: Request): string {
   if (!req.user) {
@@ -32,5 +35,24 @@ export const ConversationController = {
       (req.body as CreateMessageInput).content,
     );
     res.status(201).json(messages);
+  },
+
+  async addAgentMessage(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+      throw new AppError('Not authenticated', 401);
+    }
+
+    if (typeof req.params.id !== 'string') {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    const message = await ConversationService.addAgentMessage(
+      req.params.id,
+      req.body as CreateAgentMessageInput,
+      req.user.id,
+      req.user.role,
+    );
+
+    res.status(201).json({ message: message.message });
   },
 };

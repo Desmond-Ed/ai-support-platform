@@ -77,7 +77,28 @@ fact.
   query, versus the flexibility above. Revisit if Phase 7's retrieval
   latency numbers make that join a real cost.
 
+## Handoff and degraded behavior
 
+- **Why `/api/chat` is synchronous**: the customer is actively waiting for a
+  reply while the message is being typed. The chat request is therefore a real
+  user-facing synchronous boundary, with a hard timeout and a clear degraded-mode
+  fallback.
+- **What the customer sees when the AI is down or slow**: Node does not expose a
+  raw 500. Instead, it persists the customer's message, creates a system message
+  explaining that the AI service is temporarily unavailable, and returns a graceful
+  degraded response while the conversation is escalated.
+- **What gets persisted when the AI service is down or slow**: the customer's
+  message is always saved; if the AI call fails or times out after 15 seconds,
+  Node records a system-level follow-up message, marks the conversation `ESCALATED`,
+  creates a single ticket for that conversation if none is open, and sends an
+  `AI_HANDOFF` notification to the customer and available agents.
+- **When handoff triggers**: handoff occurs when the AI service returns a positive
+  `should_escalate` signal, or when the Node-side 15s timeout/degraded path fires.
+- **Why handoff is Node-owned state**: Node owns the conversation, ticket, message,
+  and notification tables. The AI service is treated as an untrusted dependency;
+  it can recommend escalation, but the actual state transition and persistence all
+  happen in Node so the platform stays consistent even if the upstream AI service
+  is slow or unavailable.
 - **Phase 6 (Python AI service exists) / Phase 7 (RAG)**: the chat-reply
   call (`POST /api/conversations/:id/messages` → AI service) is the first
   real sync boundary — a customer is watching a typing indicator. Needs:

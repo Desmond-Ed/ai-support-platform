@@ -38,6 +38,15 @@
 - Customer-owned message persistence with validation and ownership tests;
    AI response generation through Python `/api/chat`, including persisted AI
    messages and a `503` degraded path.
+- AI escalation and handoff flow is Node-owned: `shouldEscalate` results and
+   AI-service outages set conversations to `ESCALATED`, create a single ticket
+   once, persist a system handoff message, and notify the customer plus available
+   AGENT users.
+- Agent reply route for `AGENT`/`ADMIN` users is implemented and tested: first
+   agent reply moves the conversation to `WITH_AGENT`, persists the agent message,
+   and sends `AGENT_REPLIED` to the customer.
+- Ticket resolution now updates conversation state and sends `TICKET_RESOLVED`
+   notifications when a ticket is marked resolved.
 
 ### Knowledge base / RAG foundation
 

@@ -15,6 +15,14 @@ export type RealtimeEvents = {
   ticket_updated: { ticketId: string; status: string };
   agent_assigned: { ticketId: string; agentId: string };
   notification: { type: string; message: string; resourceId?: string };
+  conversation_message: {
+    messageId: string;
+    conversationId: string;
+    senderType: 'CUSTOMER' | 'AGENT' | 'AI' | 'SYSTEM';
+    senderId: string;
+    content: string;
+    createdAt: string;
+  };
 };
 
 export type ResourceSubscription = {
@@ -170,4 +178,12 @@ export function emitNotification(
   for (const userId of userIds) {
     io.to(socketRooms.user(userId)).emit('notification', payload);
   }
+}
+
+export function emitConversationMessage(
+  io: SocketIOServer,
+  conversationId: string,
+  payload: RealtimeEvents['conversation_message'],
+): void {
+  io.to(socketRooms.conversation(conversationId)).emit('conversation_message', payload);
 }

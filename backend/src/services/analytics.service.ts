@@ -15,7 +15,7 @@ export const AnalyticsService = {
       ticketsByStatus,
       conversations,
       resolvedByAI,
-      aiResolutionRate: conversations === 0 ? 0 : resolvedByAI / conversations,
+      aiResolutionRate: conversations === 0 ? 0 : (resolvedByAI / conversations) * 100,
       unreadNotifications,
       knowledgeByStatus,
     };

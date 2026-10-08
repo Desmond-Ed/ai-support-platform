@@ -7,11 +7,14 @@ const ticketRepository = vi.hoisted(() => ({
   create: vi.fn(),
   assignAgent: vi.fn(),
   updateStatus: vi.fn(),
+  setResolvedAt: vi.fn(),
   setAvailability: vi.fn(),
 }));
 
 const conversationRepository = vi.hoisted(() => ({
   findByIdForCustomer: vi.fn(),
+  updateStatus: vi.fn(),
+  updateResolved: vi.fn(),
 }));
 
 const notificationService = vi.hoisted(() => ({
@@ -100,7 +103,7 @@ describe('TicketService', () => {
   });
 
   it('updates the ticket status', async () => {
-    const ticket = { id: 'ticket-1', status: 'IN_PROGRESS' };
+    const ticket = { id: 'ticket-1', customerId: 'customer-1', status: 'IN_PROGRESS' };
     ticketRepository.findById.mockResolvedValue(ticket);
     ticketRepository.updateStatus.mockResolvedValue(ticket);
 
@@ -108,6 +111,42 @@ describe('TicketService', () => {
 
     expect(result).toEqual(ticket);
     expect(ticketRepository.updateStatus).toHaveBeenCalledWith('ticket-1', 'IN_PROGRESS');
+  });
+
+  it('sends a resolved notification and records conversation resolution when a ticket resolves', async () => {
+    const ticket = {
+      id: 'ticket-1',
+      conversationId: 'conversation-1',
+      customerId: 'customer-1',
+      status: 'RESOLVED',
+    };
+    ticketRepository.findById.mockResolvedValue(ticket);
+    ticketRepository.updateStatus.mockResolvedValue({ ...ticket, status: 'RESOLVED' });
+    ticketRepository.setResolvedAt.mockResolvedValue({
+      ...ticket,
+      status: 'RESOLVED',
+      resolvedAt: new Date(),
+    });
+    conversationRepository.updateStatus.mockResolvedValue({
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      status: 'RESOLVED',
+      resolvedAt: new Date(),
+    });
+
+    const result = await TicketService.updateStatus('ticket-1', 'RESOLVED');
+
+    expect(result.status).toBe('RESOLVED');
+    expect(conversationRepository.updateStatus).toHaveBeenCalledWith(
+      'conversation-1',
+      'RESOLVED',
+      expect.any(Date),
+    );
+    expect(notificationService.create).toHaveBeenCalledWith(
+      'customer-1',
+      'TICKET_RESOLVED',
+      expect.objectContaining({ type: 'TICKET_RESOLVED' }),
+    );
   });
 
   it('updates agent availability', async () => {

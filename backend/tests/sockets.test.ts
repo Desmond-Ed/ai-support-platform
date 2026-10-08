@@ -11,7 +11,12 @@ vi.mock('../src/config/db.js', () => ({
   },
 }));
 
-import { authenticateSocket, canSubscribeToResource, socketRooms } from '../src/sockets/index.js';
+import {
+  authenticateSocket,
+  canSubscribeToResource,
+  emitConversationMessage,
+  socketRooms,
+} from '../src/sockets/index.js';
 
 function socket(overrides: Record<string, unknown> = {}) {
   return {
@@ -71,5 +76,31 @@ describe('Socket.IO authentication', () => {
         { resource: 'ticket', resourceId: 'ticket-1' },
       ),
     ).resolves.toBe(false);
+  });
+
+  it('emits a conversation message to the conversation room', () => {
+    const io = {
+      to: vi.fn().mockReturnThis(),
+      emit: vi.fn(),
+    } as unknown as Parameters<typeof emitConversationMessage>[0];
+
+    emitConversationMessage(io, 'conversation-1', {
+      messageId: 'msg-1',
+      conversationId: 'conversation-1',
+      senderType: 'CUSTOMER',
+      senderId: 'customer-1',
+      content: 'hello',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    });
+
+    expect(io.to).toHaveBeenCalledWith('conversation:conversation-1');
+    expect(io.emit).toHaveBeenCalledWith('conversation_message', {
+      messageId: 'msg-1',
+      conversationId: 'conversation-1',
+      senderType: 'CUSTOMER',
+      senderId: 'customer-1',
+      content: 'hello',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    });
   });
 });

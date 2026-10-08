@@ -78,6 +78,30 @@ export const TicketService = {
     }
 
     const updatedTicket = await TicketRepository.updateStatus(ticketId, status);
+
+    if (status === 'RESOLVED') {
+      const resolvedAt = new Date();
+      const [resolvedTicket] = await Promise.all([
+        TicketRepository.setResolvedAt(ticketId, resolvedAt),
+        ConversationRepository.updateStatus(ticket.conversationId, 'RESOLVED', resolvedAt),
+      ]);
+
+      await Promise.all([
+        NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
+          type: 'TICKET_STATUS_CHANGED',
+          message: `Ticket status changed to ${status}`,
+          resourceId: ticketId,
+        }),
+        NotificationService.create(ticket.customerId, 'TICKET_RESOLVED', {
+          type: 'TICKET_RESOLVED',
+          message: 'Your ticket has been resolved.',
+          resourceId: ticketId,
+        }),
+      ]);
+
+      return resolvedTicket;
+    }
+
     await NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
       type: 'TICKET_STATUS_CHANGED',
       message: `Ticket status changed to ${status}`,

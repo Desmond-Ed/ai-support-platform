@@ -33,6 +33,23 @@ export const TicketRepository = {
     });
   },
 
+  async setResolvedAt(ticketId: string, resolvedAt: Date, db: Db = prisma): Promise<Ticket> {
+    return db.ticket.update({
+      where: { id: ticketId },
+      data: { resolvedAt, status: 'RESOLVED' },
+    });
+  },
+
+  async findOpenByConversationId(conversationId: string, db: Db = prisma): Promise<Ticket | null> {
+    return db.ticket.findFirst({
+      where: {
+        conversationId,
+        status: { not: 'CLOSED' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  },
+
   async create(
     data: {
       conversationId: string;

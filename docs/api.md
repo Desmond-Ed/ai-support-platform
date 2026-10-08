@@ -44,19 +44,31 @@ are currently implemented.
 
 ### Conversations
 
-| Method | Path                              | Auth       | Description                                                                                          |
-| ------ | --------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------- |
-| GET    | `/api/conversations`              | access JWT | Lists conversations belonging to the authenticated customer, newest activity first.                  |
-| POST   | `/api/conversations`              | access JWT | Creates an empty AI-handled conversation for the authenticated customer.                             |
-| POST   | `/api/conversations/:id/messages` | access JWT | Validates ownership, persists the customer message, calls the AI service, and persists the AI reply. |
+- `GET /api/conversations` — access JWT — Lists conversations belonging to the authenticated customer, newest activity first.
+- `POST /api/conversations` — access JWT — Creates an empty AI-handled conversation for the authenticated customer.
+- `POST /api/conversations/:id/messages` — access JWT — Validates ownership, persists the customer message, calls the AI service, and persists the AI reply.
+- `POST /api/conversations/:id/agent-messages` — AGENT or ADMIN JWT — Validates role + assignment, persists an agent message, and moves the conversation to `WITH_AGENT`.
 
 Message creation calls the Python service at `POST /api/chat`. Node persists
 the customer message first, then persists the returned AI message with
 confidence, groundedness, and escalation metadata. If the AI service is
-unavailable, the endpoint returns `503` and the customer message remains
-persisted. Validation uses `registerSchema`, `loginSchema`, and
-`createMessageSchema`. Errors use the shared `{ error: { message, details? } }`
+unavailable, the endpoint returns a degraded synchronous result instead of a raw
+500: Node persists a system message, sets the conversation to `ESCALATED`,
+creates a ticket once, and sends the customer an `AI_HANDOFF` notification.
+Validation uses `registerSchema`, `loginSchema`, `createMessageSchema`, and
+`createAgentMessageSchema`. Errors use the shared `{ error: { message, details? } }`
 shape.
+
+#### Agent reply semantics
+
+- `POST /api/conversations/:id/agent-messages`
+- Allowed roles: `AGENT` and `ADMIN`
+- Assignment rule: the caller must be the assigned agent for that conversation, or an admin
+- Request body: `{ "content": "I can help with this." }`
+- Success: `201` with the created agent message payload
+- On the first agent reply, the conversation status is moved from `ESCALATED` to `WITH_AGENT`
+- Customer receives an `AGENT_REPLIED` notification
+- `403` if the user is an unassigned agent, `401` if unauthenticated, `400` on invalid body
 
 ### Tickets
 

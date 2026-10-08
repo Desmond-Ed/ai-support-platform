@@ -121,11 +121,11 @@ test.describe('Ticket status transitions', () => {
     const statusSelect = card.locator('select').filter({ hasText: 'OPEN' }).first();
     if (await statusSelect.isVisible()) {
       await statusSelect.selectOption('IN_PROGRESS');
-      await expect(card.locator('text=IN_PROGRESS').first()).toBeVisible({ timeout: 5000 });
+      await expect(statusSelect).toHaveValue('IN_PROGRESS');
       await statusSelect.selectOption('RESOLVED');
-      await expect(card.locator('text=RESOLVED').first()).toBeVisible({ timeout: 5000 });
+      await expect(statusSelect).toHaveValue('RESOLVED');
       await statusSelect.selectOption('CLOSED');
-      await expect(card.locator('text=CLOSED').first()).toBeVisible({ timeout: 5000 });
+      await expect(statusSelect).toHaveValue('CLOSED');
     }
   });
 });

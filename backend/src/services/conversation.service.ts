@@ -4,7 +4,6 @@ import type { Conversation, Message, Role } from '../generated/prisma/client.js'
 import { AppError } from '../utils/AppError.js';
 import { generateReply } from './ai.service.js';
 import { NotificationService } from './notification.service.js';
-import { TicketService } from './ticket.service.js';
 import type { RealtimeEvents } from '../sockets/index.js';
 
 type ConversationMessagePayload = RealtimeEvents['conversation_message'];
@@ -23,18 +22,29 @@ async function ensureEscalation(
   customerId: string,
   fallbackMessage: string,
 ): Promise<void> {
-  const conversation = await ConversationRepository.findById(conversationId);
-  if (!conversation || conversation.status !== 'AI_HANDLING') {
+  const ticket = await prisma.$transaction(async (tx) => {
+    const claim = await tx.conversation.updateMany({
+      where: { id: conversationId, status: 'AI_HANDLING' },
+      data: { status: 'ESCALATED' },
+    });
+    if (claim.count !== 1) {
+      return null;
+    }
+
+    return tx.ticket.create({
+      data: {
+        conversationId,
+        customerId,
+        subject: `Conversation #${conversationId.slice(0, 8)}`,
+        description: fallbackMessage,
+        priority: 'MEDIUM',
+        status: 'OPEN',
+      },
+    });
+  });
+  if (!ticket) {
     return;
   }
-
-  const ticket = await TicketService.createForCustomer(customerId, conversationId, {
-    subject: `Conversation #${conversationId.slice(0, 8)}`,
-    description: fallbackMessage,
-    priority: 'MEDIUM',
-  });
-
-  await ConversationRepository.updateStatus(conversationId, 'ESCALATED');
 
   const escalationMessage = {
     type: 'AI_HANDOFF' as const,
@@ -168,6 +178,9 @@ export const ConversationService = {
     if (actingUserRole !== 'ADMIN' && conversation.agentId !== actingUserId) {
       throw new AppError('Agent is not assigned to this conversation', 403);
     }
+    if (conversation.status === 'RESOLVED' || conversation.status === 'CLOSED') {
+      throw new AppError('Cannot reply to a resolved or closed conversation', 409);
+    }
 
     const message = await ConversationRepository.createAgentMessage(
       conversationId,
@@ -183,11 +196,7 @@ export const ConversationService = {
       createdAt: message.createdAt.toISOString(),
     });
 
-    if (
-      conversation.status !== 'WITH_AGENT' &&
-      conversation.status !== 'RESOLVED' &&
-      conversation.status !== 'CLOSED'
-    ) {
+    if (conversation.status !== 'WITH_AGENT') {
       await ConversationRepository.updateStatus(conversationId, 'WITH_AGENT');
     }
 

@@ -178,7 +178,7 @@ function App() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Metric label="Conversations" value={overview?.conversations ?? '-'} />
-          <Metric label="Resolved by AI" value={overview ? `${Math.round(overview.aiResolutionRate * 100)}%` : '-'} />
+          <Metric label="Resolved by AI" value={overview ? `${Math.round(overview.aiResolutionRate)}%` : '-'} />
           <Metric label="AI resolutions" value={overview?.resolvedByAI ?? '-'} />
           <Metric label="Unread notifications" value={overview?.unreadNotifications ?? notifications.filter((item) => !item.read).length} />
         </section>

@@ -18,13 +18,13 @@ async function login(page: any, credentials: { email: string; password: string }
 test.describe('Notifications', () => {
   test('customer sees notifications panel', async ({ page }) => {
     await login(page, TEST_CUSTOMER);
-    await expect(page.locator('text=Notifications')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
     await expect(page.locator('button:has-text("Mark all read")')).toBeVisible();
   });
 
   test('agent sees notifications panel', async ({ page }) => {
     await login(page, TEST_AGENT);
-    await expect(page.locator('text=Notifications')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
   });
 
   test('mark all read button works', async ({ page }) => {

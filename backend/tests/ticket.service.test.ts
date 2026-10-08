@@ -11,6 +11,9 @@ const ticketRepository = vi.hoisted(() => ({
   setAvailability: vi.fn(),
 }));
 
+const transactionClient = vi.hoisted(() => ({}));
+const prisma = vi.hoisted(() => ({ $transaction: vi.fn() }));
+
 const conversationRepository = vi.hoisted(() => ({
   findByIdForCustomer: vi.fn(),
   updateStatus: vi.fn(),
@@ -24,6 +27,7 @@ const notificationService = vi.hoisted(() => ({
 vi.mock('../src/repositories/TicketRepository.js', () => ({
   TicketRepository: ticketRepository,
 }));
+vi.mock('../src/config/db.js', () => ({ prisma }));
 
 vi.mock('../src/repositories/ConversationRepository.js', () => ({
   ConversationRepository: conversationRepository,
@@ -37,6 +41,7 @@ import { TicketService } from '../src/services/ticket.service.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  prisma.$transaction.mockImplementation((callback) => callback(transactionClient));
 });
 
 describe('TicketService', () => {
@@ -82,14 +87,14 @@ describe('TicketService', () => {
   });
 
   it('assigns an agent to a ticket', async () => {
-    const ticket = { id: 'ticket-1', status: 'OPEN' };
+    const ticket = { id: 'ticket-1', conversationId: 'conversation-1', status: 'OPEN' };
     ticketRepository.findById.mockResolvedValue(ticket);
     ticketRepository.assignAgent.mockResolvedValue({ id: 'assignment-1', ticketId: 'ticket-1', agentId: 'agent-1' });
 
     const result = await TicketService.assignAgent('ticket-1', 'agent-1');
 
     expect(result).toEqual({ id: 'assignment-1', ticketId: 'ticket-1', agentId: 'agent-1' });
-    expect(ticketRepository.assignAgent).toHaveBeenCalledWith('ticket-1', 'agent-1');
+    expect(ticketRepository.assignAgent).toHaveBeenCalledWith('ticket-1', 'agent-1', 'conversation-1');
   });
 
   it('lists assigned tickets for an agent', async () => {
@@ -137,10 +142,17 @@ describe('TicketService', () => {
     const result = await TicketService.updateStatus('ticket-1', 'RESOLVED');
 
     expect(result.status).toBe('RESOLVED');
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(ticketRepository.setResolvedAt).toHaveBeenCalledWith(
+      'ticket-1',
+      expect.any(Date),
+      transactionClient,
+    );
     expect(conversationRepository.updateStatus).toHaveBeenCalledWith(
       'conversation-1',
       'RESOLVED',
       expect.any(Date),
+      transactionClient,
     );
     expect(notificationService.create).toHaveBeenCalledWith(
       'customer-1',

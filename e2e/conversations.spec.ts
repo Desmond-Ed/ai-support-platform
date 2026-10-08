@@ -29,7 +29,7 @@ test.describe('API health checks', () => {
   });
 
   test('AI service health', async ({ request }) => {
-    const response = await request.get('http://localhost:8000/health');
+    const response = await request.get('http://localhost:8000/api/health');
     expect(response.ok()).toBeTruthy();
   });
 });

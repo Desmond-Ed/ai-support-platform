@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prisma = vi.hoisted(() => ({
   user: { findMany: vi.fn() },
+  $transaction: vi.fn(),
+}));
+
+const transactionClient = vi.hoisted(() => ({
+  conversation: { updateMany: vi.fn() },
+  ticket: { create: vi.fn() },
 }));
 
 const conversationRepository = vi.hoisted(() => ({
@@ -16,10 +22,6 @@ const conversationRepository = vi.hoisted(() => ({
   updateStatus: vi.fn(),
 }));
 
-const ticketService = vi.hoisted(() => ({
-  createForCustomer: vi.fn(),
-}));
-
 const notificationService = vi.hoisted(() => ({
   create: vi.fn(),
 }));
@@ -31,9 +33,6 @@ vi.mock('../src/repositories/ConversationRepository.js', () => ({
   ConversationRepository: conversationRepository,
 }));
 vi.mock('../src/services/ai.service.js', () => ({ generateReply }));
-vi.mock('../src/services/ticket.service.js', () => ({
-  TicketService: ticketService,
-}));
 vi.mock('../src/services/notification.service.js', () => ({
   NotificationService: notificationService,
 }));
@@ -43,6 +42,14 @@ import { ConversationService } from '../src/services/conversation.service.js';
 beforeEach(() => {
   vi.resetAllMocks();
   prisma.user.findMany.mockResolvedValue([{ id: 'agent-1' }]);
+  prisma.$transaction.mockImplementation((callback) => callback(transactionClient));
+  transactionClient.conversation.updateMany.mockResolvedValue({ count: 1 });
+  transactionClient.ticket.create.mockResolvedValue({
+    id: 'ticket-1',
+    conversationId: 'conversation-1',
+    customerId: 'customer-1',
+    status: 'OPEN',
+  });
 });
 
 describe('ConversationService', () => {
@@ -121,11 +128,6 @@ describe('ConversationService', () => {
       customerId: 'customer-1',
       status: 'AI_HANDLING',
     });
-    conversationRepository.findById.mockResolvedValue({
-      id: 'conversation-1',
-      customerId: 'customer-1',
-      status: 'AI_HANDLING',
-    });
     conversationRepository.createCustomerMessage.mockResolvedValue(customerMessage);
     generateReply.mockResolvedValue({
       content: 'I need a person.',
@@ -135,18 +137,6 @@ describe('ConversationService', () => {
     });
     conversationRepository.createAiMessage.mockResolvedValue(assistantMessage);
     conversationRepository.createSystemMessage.mockResolvedValue(handoffMessage);
-    conversationRepository.updateStatus.mockResolvedValue({
-      id: 'conversation-1',
-      customerId: 'customer-1',
-      status: 'ESCALATED',
-    });
-    ticketService.createForCustomer.mockResolvedValue({
-      id: 'ticket-1',
-      conversationId: 'conversation-1',
-      customerId: 'customer-1',
-      status: 'OPEN',
-    });
-
     const result = await ConversationService.addCustomerMessage(
       'conversation-1',
       'customer-1',
@@ -154,17 +144,24 @@ describe('ConversationService', () => {
     );
 
     expect(result.assistantMessage).toEqual(assistantMessage);
-    expect(ticketService.createForCustomer).toHaveBeenCalledWith(
-      'customer-1',
-      'conversation-1',
-      expect.objectContaining({ subject: expect.any(String) }),
-    );
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transactionClient.conversation.updateMany).toHaveBeenCalledWith({
+      where: { id: 'conversation-1', status: 'AI_HANDLING' },
+      data: { status: 'ESCALATED' },
+    });
+    expect(transactionClient.ticket.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        conversationId: 'conversation-1',
+        customerId: 'customer-1',
+        subject: expect.any(String),
+      }),
+    });
     expect(notificationService.create).toHaveBeenCalledWith(
       'customer-1',
       'AI_HANDOFF',
       expect.objectContaining({ type: 'AI_HANDOFF' }),
     );
-    expect(conversationRepository.updateStatus).toHaveBeenCalledWith('conversation-1', 'ESCALATED');
+    expect(conversationRepository.updateStatus).not.toHaveBeenCalled();
   });
 
   it('keeps a degraded 503 response as a persisted escalation instead of a raw failure', async () => {
@@ -176,26 +173,9 @@ describe('ConversationService', () => {
       customerId: 'customer-1',
       status: 'AI_HANDLING',
     });
-    conversationRepository.findById.mockResolvedValue({
-      id: 'conversation-1',
-      customerId: 'customer-1',
-      status: 'AI_HANDLING',
-    });
     conversationRepository.createCustomerMessage.mockResolvedValue(customerMessage);
     generateReply.mockRejectedValue({ statusCode: 503, message: 'AI service unavailable' });
     conversationRepository.createSystemMessage.mockResolvedValue(degradedMessage);
-    conversationRepository.updateStatus.mockResolvedValue({
-      id: 'conversation-1',
-      customerId: 'customer-1',
-      status: 'ESCALATED',
-    });
-    ticketService.createForCustomer.mockResolvedValue({
-      id: 'ticket-1',
-      conversationId: 'conversation-1',
-      customerId: 'customer-1',
-      status: 'OPEN',
-    });
-
     const result = await ConversationService.addCustomerMessage(
       'conversation-1',
       'customer-1',
@@ -205,10 +185,11 @@ describe('ConversationService', () => {
     expect(result.assistantMessage).toEqual(degradedMessage);
     expect(result.degraded).toBe(true);
     expect(conversationRepository.createSystemMessage).toHaveBeenCalled();
-    expect(ticketService.createForCustomer).toHaveBeenCalledTimes(1);
+    expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
   });
 
   it('does not create a duplicate ticket when the same conversation is escalated twice', async () => {
+      transactionClient.conversation.updateMany.mockResolvedValue({ count: 0 });
     conversationRepository.findByIdForCustomer.mockResolvedValue({
       id: 'conversation-1',
       customerId: 'customer-1',
@@ -238,7 +219,7 @@ describe('ConversationService', () => {
 
     await ConversationService.addCustomerMessage('conversation-1', 'customer-1', 'I need help');
 
-    expect(ticketService.createForCustomer).not.toHaveBeenCalled();
+    expect(transactionClient.ticket.create).not.toHaveBeenCalled();
   });
 
   it('registers an agent reply and moves the conversation to WITH_AGENT', async () => {
@@ -279,5 +260,19 @@ describe('ConversationService', () => {
       'AGENT_REPLIED',
       expect.objectContaining({ type: 'AGENT_REPLIED' }),
     );
+  });
+
+  it.each(['RESOLVED', 'CLOSED'] as const)('rejects an agent reply to a %s conversation', async (status) => {
+    conversationRepository.findById.mockResolvedValue({
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      agentId: 'agent-1',
+      status,
+    });
+
+    await expect(
+      ConversationService.addAgentMessage('conversation-1', { content: 'Reply' }, 'agent-1', 'AGENT'),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(conversationRepository.createAgentMessage).not.toHaveBeenCalled();
   });
 });

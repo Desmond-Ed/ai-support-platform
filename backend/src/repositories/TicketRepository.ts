@@ -76,13 +76,24 @@ export const TicketRepository = {
   async assignAgent(
     ticketId: string,
     agentId: string,
-    db: Db = prisma,
+    conversationId: string,
   ): Promise<TicketAssignment> {
-    return db.ticketAssignment.create({
-      data: {
-        ticketId,
-        agentId,
-      },
+    return prisma.$transaction(async (tx) => {
+      const assignment = await tx.ticketAssignment.create({
+        data: { ticketId, agentId },
+      });
+      const conversation = await tx.conversation.findUniqueOrThrow({
+        where: { id: conversationId },
+        select: { status: true },
+      });
+      await tx.conversation.update({
+        where: { id: conversationId },
+        data: {
+          agentId,
+          ...(conversation.status === 'ESCALATED' ? { status: 'WITH_AGENT' } : {}),
+        },
+      });
+      return assignment;
     });
   },
 

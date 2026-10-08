@@ -1,3 +1,4 @@
+import { prisma } from '../config/db.js';
 import { AppError } from '../utils/AppError.js';
 import { ConversationRepository } from '../repositories/ConversationRepository.js';
 import { TicketRepository } from '../repositories/TicketRepository.js';
@@ -52,7 +53,7 @@ export const TicketService = {
       throw new AppError('Ticket not found', 404);
     }
 
-    const assignment = await TicketRepository.assignAgent(ticketId, agentId);
+    const assignment = await TicketRepository.assignAgent(ticketId, agentId, ticket.conversationId);
     await Promise.all([
       NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
         type: 'TICKET_STATUS_CHANGED',
@@ -77,14 +78,13 @@ export const TicketService = {
       throw new AppError('Ticket not found', 404);
     }
 
-    const updatedTicket = await TicketRepository.updateStatus(ticketId, status);
-
     if (status === 'RESOLVED') {
       const resolvedAt = new Date();
-      const [resolvedTicket] = await Promise.all([
-        TicketRepository.setResolvedAt(ticketId, resolvedAt),
-        ConversationRepository.updateStatus(ticket.conversationId, 'RESOLVED', resolvedAt),
-      ]);
+      const resolvedTicket = await prisma.$transaction(async (tx) => {
+        const updatedTicket = await TicketRepository.setResolvedAt(ticketId, resolvedAt, tx);
+        await ConversationRepository.updateStatus(ticket.conversationId, 'RESOLVED', resolvedAt, tx);
+        return updatedTicket;
+      });
 
       await Promise.all([
         NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
@@ -102,6 +102,7 @@ export const TicketService = {
       return resolvedTicket;
     }
 
+    const updatedTicket = await TicketRepository.updateStatus(ticketId, status);
     await NotificationService.create(ticket.customerId, 'TICKET_STATUS_CHANGED', {
       type: 'TICKET_STATUS_CHANGED',
       message: `Ticket status changed to ${status}`,

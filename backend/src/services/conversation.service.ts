@@ -52,6 +52,11 @@ async function ensureEscalation(
     resourceId: ticket.id,
   };
 
+  await NotificationService.create(customerId, 'TICKET_CREATED', {
+    type: 'TICKET_CREATED',
+    message: `Ticket ${ticket.subject} was created`,
+    resourceId: ticket.id,
+  });
   await NotificationService.create(customerId, 'AI_HANDOFF', escalationMessage);
 
   const agentUsers = await prisma.user.findMany({
@@ -80,6 +85,20 @@ export const ConversationService = {
 
   async createForCustomer(customerId: string): Promise<Conversation> {
     return ConversationRepository.create(customerId);
+  },
+
+  async listMessages(conversationId: string, requesterId: string, requesterRole: Role): Promise<Message[]> {
+    const conversation = requesterRole === 'CUSTOMER'
+      ? await ConversationRepository.findByIdForCustomer(conversationId, requesterId)
+      : await ConversationRepository.findById(conversationId);
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+    if (requesterRole === 'AGENT' && conversation.agentId !== requesterId) {
+      throw new AppError('Agent is not assigned to this conversation', 403);
+    }
+
+    return ConversationRepository.listMessages(conversationId);
   },
 
   async addCustomerMessage(

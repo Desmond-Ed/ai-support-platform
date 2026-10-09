@@ -87,6 +87,31 @@ export const ConversationService = {
     return ConversationRepository.create(customerId);
   },
 
+  async handoffForCustomer(
+    conversationId: string,
+    customerId: string,
+    requesterRole: Role,
+  ): Promise<Conversation> {
+    const conversation = requesterRole === 'CUSTOMER'
+      ? await ConversationRepository.findByIdForCustomer(conversationId, customerId)
+      : null;
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    await ensureEscalation(
+      conversationId,
+      customerId,
+      'Customer requested a human support agent.',
+    );
+
+    const updatedConversation = await ConversationRepository.findById(conversationId);
+    if (!updatedConversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+    return updatedConversation;
+  },
+
   async listMessages(conversationId: string, requesterId: string, requesterRole: Role): Promise<Message[]> {
     const conversation = requesterRole === 'CUSTOMER'
       ? await ConversationRepository.findByIdForCustomer(conversationId, requesterId)

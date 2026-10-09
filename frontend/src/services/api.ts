@@ -45,6 +45,7 @@ export type ConversationMessage = {
   senderId: string | null;
   content: string;
   createdAt: string;
+  sources?: Array<{ title: string }> | null;
 };
 
 export type SendMessageResponse = {
@@ -100,6 +101,8 @@ export const api = {
     request<{ tickets: Ticket[] }>(token, role === 'CUSTOMER' ? '/tickets' : '/tickets/agent'),
   listConversations: (token: string) => request<{ conversations: Conversation[] }>(token, '/conversations'),
   createConversation: (token: string) => request<{ conversation: Conversation }>(token, '/conversations', { method: 'POST' }),
+  requestHandoff: (token: string, conversationId: string) =>
+    request<{ conversation: Conversation }>(token, `/conversations/${conversationId}/handoff`, { method: 'POST' }),
   getMessages: (token: string, conversationId: string) =>
     request<{ messages: ConversationMessage[] }>(token, `/conversations/${conversationId}/messages`),
   sendMessage: (token: string, conversationId: string, content: string) =>

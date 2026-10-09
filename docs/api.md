@@ -48,6 +48,7 @@ are currently implemented.
 - `POST /api/conversations` — access JWT — Creates an empty AI-handled conversation for the authenticated customer.
 - `GET /api/conversations/:id/messages` — access JWT — Returns the latest 200 messages, oldest first; customers must own the conversation, agents must be assigned to it, and admins may access any conversation.
 - `POST /api/conversations/:id/messages` — access JWT — Validates ownership, persists the customer message, calls the AI service, and persists the AI reply.
+- `POST /api/conversations/:id/handoff` — CUSTOMER access JWT — Escalates an owned conversation to a human agent and returns the conversation. Repeated requests are safe and do not create duplicate tickets; other roles and non-owners receive `404`.
 - `POST /api/conversations/:id/agent-messages` — AGENT or ADMIN JWT — Validates role + assignment, persists an agent message, and moves the conversation to `WITH_AGENT`.
 
 Message creation calls the Python service at `POST /api/chat`. Node persists

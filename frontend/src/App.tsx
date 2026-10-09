@@ -135,7 +135,7 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main className={`min-h-screen px-6 py-10 ${role === 'CUSTOMER' ? 'bg-ground text-ink' : 'bg-slate-950 text-slate-100'}`}>
       <div className="mx-auto max-w-6xl">
         <header className="mb-8 flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>

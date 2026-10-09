@@ -40,4 +40,12 @@ test('customer chat sends a message and restores history after reload', async ({
   await expect(restoredMessages.filter({ hasText: messageText })).toBeVisible({ timeout: 10000 });
   await expect(restoredMessages).toHaveCount(2);
   await expect(restoredMessages.filter({ hasText: /AI|SYSTEM/ })).toHaveCount(1);
+
+  await page.getByTestId('chat-handoff').click();
+  await expect(page.getByTestId('chat-banner')).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Your conversations' })).toBeVisible();
+  await page.locator(`[data-testid="chat-conversation"][data-conversation-id="${conversationId}"]`).click();
+  await expect(page.getByTestId('chat-banner')).toBeVisible();
 });

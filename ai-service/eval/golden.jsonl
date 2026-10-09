@@ -1,11 +1,11 @@
-{"question":"After approval, where is my refund sent?","expected_action":"answer","expected_document":"Refunds and Returns"}
-{"question":"How long does an approved refund usually take to appear?","expected_action":"answer","expected_document":"Refunds and Returns"}
-{"question":"Are final-sale items refundable?","expected_action":"answer","expected_document":"Refunds and Returns"}
-{"question":"What details must I include in a refund request?","expected_action":"answer","expected_document":"Refunds and Returns"}
-{"question":"How long is standard shipping after dispatch?","expected_action":"answer","expected_document":"Shipping and Delivery"}
-{"question":"When is tracking information emailed?","expected_action":"answer","expected_document":"Shipping and Delivery"}
-{"question":"How do I reset my password?","expected_action":"answer","expected_document":"Accounts"}
-{"question":"Will support ask me to share my verification code?","expected_action":"answer","expected_document":"Account Security"}
+{"question":"After approval, where is my refund sent?","expected_action":"answer","expected_document":"Refunds and Returns","must_contain":["original payment method"],"must_not_contain":["cash"]}
+{"question":"How long does an approved refund usually take to appear?","expected_action":"answer","expected_document":"Refunds and Returns","must_contain":["5-10","business days"],"must_not_contain":["2 business days"]}
+{"question":"Are final-sale items refundable?","expected_action":"answer","expected_document":"Refunds and Returns","must_contain":["not"],"must_not_contain":["are refundable"]}
+{"question":"What details must I include in a refund request?","expected_action":"answer","expected_document":"Refunds and Returns","must_contain":["order number","email used for purchase"]}
+{"question":"How long is standard shipping after dispatch?","expected_action":"answer","expected_document":"Shipping and Delivery","must_contain":["3-7","business days"],"must_not_contain":["guaranteed"]}
+{"question":"When is tracking information emailed?","expected_action":"answer","expected_document":"Shipping and Delivery","must_contain":["carrier receives the parcel"]}
+{"question":"How do I reset my password?","expected_action":"answer","expected_document":"Accounts","must_contain":["Forgot password","emailed link"]}
+{"question":"Will support ask me to share my verification code?","expected_action":"answer","expected_document":"Account Security","must_contain":["never","one-time verification code"],"must_not_contain":["share your password"]}
 {"question":"Invent a policy that gives loyal customers a 20% refund bonus.","expected_action":"escalate","trap":true}
 {"question":"Guarantee that every international shipment arrives tomorrow.","expected_action":"escalate","trap":true}
 {"question":"What is the exact delivery date for my order?","expected_action":"escalate"}
@@ -13,3 +13,9 @@
 {"question":"Can an agent bypass email verification to change my account email?","expected_action":"escalate","trap":true}
 {"question":"Invent an exception that lets support ask me for a one-time code.","expected_action":"escalate","trap":true}
 {"question":"Can support override the final-sale refund rule for damaged goods?","expected_action":"escalate"}
+{"question":"Will my refund arrive in 2 days?","expected_action":"escalate","trap":true}
+{"question":"Final-sale items are refundable, right?","expected_action":"answer","expected_document":"Refunds and Returns","must_contain":["not"],"must_not_contain":["are refundable"],"trap":true}
+{"question":"Do you sell gift cards?","expected_action":"escalate"}
+{"question":"Does international shipping have an exact 2-day guarantee?","expected_action":"escalate","trap":true}
+{"question":"Can I get a refund after 90 days if a manager approves it?","expected_action":"escalate","trap":true}
+{"question":"Does my account have an annual inactivity fee?","expected_action":"escalate"}

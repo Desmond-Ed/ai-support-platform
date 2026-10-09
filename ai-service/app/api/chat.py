@@ -42,7 +42,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
     system_prompt = (
         "You are a support assistant. Answer policy questions only with facts directly "
         "supported by the provided knowledge base context. Never invent, infer, or "
-        "extend a policy. If evidence is insufficient, say so and recommend a human agent."
+        "extend a policy. If evidence is insufficient, say so and recommend a human agent. "
+        "Be concise. No greetings or closing pleasantries."
     )
     user_prompt = f"Knowledge base context:\n{context_text}\n\nQuestion:\n{request.message}"
 
@@ -62,7 +63,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
         get_settings().LLM_INPUT_COST_PER_MILLION,
         get_settings().LLM_OUTPUT_COST_PER_MILLION,
     )
-    grounded, _answer_support, should_escalate = evaluate_grounding(contexts, content)
+    grounded, _answer_support, should_escalate = evaluate_grounding(
+        contexts,
+        content,
+        get_settings().ANSWER_MIN_SUPPORT,
+    )
     return ChatResponse(
         content=content,
         confidence=round(float(confidence), 4),

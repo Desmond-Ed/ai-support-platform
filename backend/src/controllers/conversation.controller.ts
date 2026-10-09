@@ -24,6 +24,22 @@ export const ConversationController = {
     res.status(201).json({ conversation });
   },
 
+  async listMessages(req: Request, res: Response): Promise<void> {
+    if (!req.user) {
+      throw new AppError('Not authenticated', 401);
+    }
+    if (typeof req.params.id !== 'string') {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    const messages = await ConversationService.listMessages(
+      req.params.id,
+      req.user.id,
+      req.user.role,
+    );
+    res.status(200).json({ messages });
+  },
+
   async addMessage(req: Request, res: Response): Promise<void> {
     if (typeof req.params.id !== 'string') {
       throw new AppError('Conversation not found', 404);

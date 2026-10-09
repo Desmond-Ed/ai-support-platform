@@ -47,6 +47,36 @@ test('assigned agent can reply, while customer and resolved conversation are rej
   });
   expect(agentReply.status()).toBe(201);
 
+  const historyUrl = `${BACKEND_URL}/api/conversations/${conversation.id}/messages`;
+  const historyResponse = await request.get(historyUrl, { headers: customerHeaders });
+  expect(historyResponse.status()).toBe(200);
+  const { messages } = await historyResponse.json();
+  expect(messages).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      senderType: 'AGENT',
+      senderId: agentAuth.user.id,
+      content: 'I can help with this request.',
+    }),
+  ]));
+
+  const secondCustomerCredentials = {
+    email: `e2e-${Date.now()}@example.com`,
+    password: 'DevPassword123!',
+  };
+  const secondCustomerRegistration = await request.post(`${BACKEND_URL}/api/auth/register`, {
+    data: { ...secondCustomerCredentials, name: 'E2E Other Customer' },
+  });
+  expect(secondCustomerRegistration.status()).toBe(201);
+  const secondCustomerLogin = await request.post(`${BACKEND_URL}/api/auth/login`, {
+    data: secondCustomerCredentials,
+  });
+  expect(secondCustomerLogin.status()).toBe(200);
+  const secondCustomerAuth = await secondCustomerLogin.json();
+  const unauthorizedHistory = await request.get(historyUrl, {
+    headers: { Authorization: `Bearer ${secondCustomerAuth.accessToken}` },
+  });
+  expect(unauthorizedHistory.status()).toBe(404);
+
   const notificationsResponse = await request.get(`${BACKEND_URL}/api/notifications`, {
     headers: customerHeaders,
   });

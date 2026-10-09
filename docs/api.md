@@ -46,6 +46,7 @@ are currently implemented.
 
 - `GET /api/conversations` — access JWT — Lists conversations belonging to the authenticated customer, newest activity first.
 - `POST /api/conversations` — access JWT — Creates an empty AI-handled conversation for the authenticated customer.
+- `GET /api/conversations/:id/messages` — access JWT — Returns the latest 200 messages, oldest first; customers must own the conversation, agents must be assigned to it, and admins may access any conversation.
 - `POST /api/conversations/:id/messages` — access JWT — Validates ownership, persists the customer message, calls the AI service, and persists the AI reply.
 - `POST /api/conversations/:id/agent-messages` — AGENT or ADMIN JWT — Validates role + assignment, persists an agent message, and moves the conversation to `WITH_AGENT`.
 

@@ -15,6 +15,7 @@ const conversationRepository = vi.hoisted(() => ({
   create: vi.fn(),
   findById: vi.fn(),
   findByIdForCustomer: vi.fn(),
+  listMessages: vi.fn(),
   createCustomerMessage: vi.fn(),
   createAiMessage: vi.fn(),
   createSystemMessage: vi.fn(),
@@ -48,6 +49,7 @@ beforeEach(() => {
     id: 'ticket-1',
     conversationId: 'conversation-1',
     customerId: 'customer-1',
+    subject: 'Conversation #conversa',
     status: 'OPEN',
   });
 });
@@ -71,6 +73,73 @@ describe('ConversationService', () => {
 
     expect(result).toBe(conversation);
     expect(conversationRepository.create).toHaveBeenCalledWith('customer-1');
+  });
+
+  it('lists history for the customer who owns the conversation', async () => {
+    const messages = [{ id: 'message-1', conversationId: 'conversation-1', content: 'Hello' }];
+    conversationRepository.findByIdForCustomer.mockResolvedValue({
+      id: 'conversation-1',
+      customerId: 'customer-1',
+    });
+    conversationRepository.listMessages.mockResolvedValue(messages);
+
+    const result = await ConversationService.listMessages('conversation-1', 'customer-1', 'CUSTOMER');
+
+    expect(result).toBe(messages);
+    expect(conversationRepository.findByIdForCustomer).toHaveBeenCalledWith('conversation-1', 'customer-1');
+    expect(conversationRepository.listMessages).toHaveBeenCalledWith('conversation-1');
+  });
+
+  it('returns 404 when another customer requests conversation history', async () => {
+    conversationRepository.findByIdForCustomer.mockResolvedValue(null);
+
+    await expect(
+      ConversationService.listMessages('conversation-1', 'customer-2', 'CUSTOMER'),
+    ).rejects.toMatchObject({ statusCode: 404, message: 'Conversation not found' });
+    expect(conversationRepository.listMessages).not.toHaveBeenCalled();
+  });
+
+  it('lists history for the agent assigned to the conversation', async () => {
+    const messages = [{ id: 'message-1', conversationId: 'conversation-1', content: 'Hello' }];
+    conversationRepository.findById.mockResolvedValue({
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      agentId: 'agent-1',
+    });
+    conversationRepository.listMessages.mockResolvedValue(messages);
+
+    const result = await ConversationService.listMessages('conversation-1', 'agent-1', 'AGENT');
+
+    expect(result).toBe(messages);
+    expect(conversationRepository.listMessages).toHaveBeenCalledWith('conversation-1');
+  });
+
+  it('returns 403 when an unassigned agent requests conversation history', async () => {
+    conversationRepository.findById.mockResolvedValue({
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      agentId: 'agent-1',
+    });
+
+    await expect(
+      ConversationService.listMessages('conversation-1', 'agent-2', 'AGENT'),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(conversationRepository.listMessages).not.toHaveBeenCalled();
+  });
+
+  it('allows an admin to list conversation history', async () => {
+    const messages = [{ id: 'message-1', conversationId: 'conversation-1', content: 'Hello' }];
+    conversationRepository.findById.mockResolvedValue({
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      agentId: 'agent-1',
+    });
+    conversationRepository.listMessages.mockResolvedValue(messages);
+
+    const result = await ConversationService.listMessages('conversation-1', 'admin-1', 'ADMIN');
+
+    expect(result).toBe(messages);
+    expect(conversationRepository.listMessages).toHaveBeenCalledWith('conversation-1');
   });
 
   it('creates a customer message only for an owned conversation', async () => {
@@ -160,6 +229,15 @@ describe('ConversationService', () => {
       'customer-1',
       'AI_HANDOFF',
       expect.objectContaining({ type: 'AI_HANDOFF' }),
+    );
+    expect(notificationService.create).toHaveBeenCalledWith(
+      'customer-1',
+      'TICKET_CREATED',
+      expect.objectContaining({
+        type: 'TICKET_CREATED',
+        message: 'Ticket Conversation #conversa was created',
+        resourceId: 'ticket-1',
+      }),
     );
     expect(conversationRepository.updateStatus).not.toHaveBeenCalled();
   });

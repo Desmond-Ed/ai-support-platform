@@ -8,6 +8,7 @@ export const conversationRouter = Router();
 
 conversationRouter.use(authenticate);
 conversationRouter.get('/', ConversationController.list);
+conversationRouter.get('/:id/messages', ConversationController.listMessages);
 conversationRouter.post('/', ConversationController.create);
 conversationRouter.post('/:id/messages', validateBody(createMessageSchema), ConversationController.addMessage);
 conversationRouter.post(

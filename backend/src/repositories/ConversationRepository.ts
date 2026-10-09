@@ -32,6 +32,15 @@ export const ConversationRepository = {
     return db.conversation.findFirst({ where: { id: conversationId, customerId } });
   },
 
+  async listMessages(conversationId: string, db: Db = prisma): Promise<Message[]> {
+    const messages = await db.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return messages.reverse();
+  },
+
   async createCustomerMessage(
     conversationId: string,
     customerId: string,

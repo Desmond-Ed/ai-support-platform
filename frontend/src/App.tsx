@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AnalyticsOverview, type Notification, type Ticket } from './services/api';
 import { createSocket } from './services/socket';
+import { CustomerChat } from './components/CustomerChat';
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('accessToken') || '');
@@ -175,6 +176,7 @@ function App() {
         {error && <p className="mb-6 rounded-lg border border-rose-400/40 bg-rose-400/10 p-4 text-rose-200">{error}</p>}
         {!token && <p className="mb-6 text-slate-400">Sign in to load live operations data.</p>}
         {token && role === 'CUSTOMER' && <p className="mb-6 text-slate-400">Signed in as a customer. Notifications are available; operations analytics require an agent account.</p>}
+        {token && role === 'CUSTOMER' && <CustomerChat token={token} />}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Metric label="Conversations" value={overview?.conversations ?? '-'} />

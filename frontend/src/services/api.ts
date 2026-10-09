@@ -32,6 +32,27 @@ export type Ticket = {
   updatedAt: string;
 };
 
+export type Conversation = {
+  id: string;
+  status: 'AI_HANDLING' | 'ESCALATED' | 'WITH_AGENT' | 'RESOLVED' | 'CLOSED';
+  updatedAt: string;
+};
+
+export type ConversationMessage = {
+  id: string;
+  conversationId: string;
+  senderType: 'CUSTOMER' | 'AGENT' | 'AI' | 'SYSTEM';
+  senderId: string | null;
+  content: string;
+  createdAt: string;
+};
+
+export type SendMessageResponse = {
+  customerMessage: ConversationMessage;
+  assistantMessage: ConversationMessage;
+  degraded?: boolean;
+};
+
 async function request<T>(token: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}/api${path}`, {
     ...init,
@@ -77,7 +98,15 @@ export const api = {
   analytics: (token: string) => request<{ overview: AnalyticsOverview }>(token, '/analytics/overview'),
   tickets: (token: string, role: string) =>
     request<{ tickets: Ticket[] }>(token, role === 'CUSTOMER' ? '/tickets' : '/tickets/agent'),
-  createConversation: (token: string) => request<{ conversation: { id: string } }>(token, '/conversations', { method: 'POST' }),
+  listConversations: (token: string) => request<{ conversations: Conversation[] }>(token, '/conversations'),
+  createConversation: (token: string) => request<{ conversation: Conversation }>(token, '/conversations', { method: 'POST' }),
+  getMessages: (token: string, conversationId: string) =>
+    request<{ messages: ConversationMessage[] }>(token, `/conversations/${conversationId}/messages`),
+  sendMessage: (token: string, conversationId: string, content: string) =>
+    request<SendMessageResponse>(token, `/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
   createTicket: (token: string, payload: { conversationId: string; subject: string; description: string; priority: Ticket['priority'] }) =>
     request<{ ticket: Ticket }>(token, '/tickets', { method: 'POST', body: JSON.stringify(payload) }),
   updateTicketStatus: (token: string, ticketId: string, status: Ticket['status']) =>

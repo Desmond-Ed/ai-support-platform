@@ -42,4 +42,11 @@ export const KnowledgeDocumentRepository = {
       },
     });
   },
+
+  async markFailed(documentId: string, errorMessage: string, db: Db = prisma): Promise<KnowledgeDocument> {
+    return db.knowledgeDocument.update({
+      where: { id: documentId },
+      data: { status: 'FAILED', errorMessage },
+    });
+  },
 };

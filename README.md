@@ -81,6 +81,16 @@ This starts:
 - `ai-service` — FastAPI on `:8000` (hot reload)
 - `frontend` — Vite dev server on `:5173`
 
+### Clean clone boot
+
+The backend Docker dev command runs `prisma generate` before starting the
+watch server, so a clean clone can regenerate its ignored Prisma client without
+requiring a database connection during generation.
+
+```bash
+docker compose up -d --build backend
+```
+
 ### 3. Verify
 
 - Frontend: http://localhost:5173

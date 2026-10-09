@@ -79,6 +79,20 @@ fact.
 
 ## Handoff and degraded behavior
 
+## Grounding gate
+
+- Retrieval only supplies chunks whose similarity meets `RETRIEVAL_MIN_SIMILARITY`
+  (default `0.72`). If no chunk qualifies, the LLM is not called: the AI returns
+  a fixed refusal and requests a human handoff.
+- For generated answers, the fraction of non-stopword answer terms longer than
+  two characters found in retrieved context must meet `ANSWER_MIN_SUPPORT`
+  (default `0.65`); otherwise the response escalates. Confidence is the top
+  retrieval similarity, and response sources identify only supplied chunks.
+- Database, embedding, or retrieval failures return HTTP 503 so Node can use its
+  degraded path. They are not treated as an ordinary refusal: an empty successful
+  retrieval means no evidence matched, while a retrieval error means evidence
+  availability could not be determined.
+
 - **Why `/api/chat` is synchronous**: the customer is actively waiting for a
   reply while the message is being typed. The chat request is therefore a real
   user-facing synchronous boundary, with a hard timeout and a clear degraded-mode

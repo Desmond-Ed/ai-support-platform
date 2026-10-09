@@ -8,15 +8,18 @@ from app.embeddings.client import embed_documents
 settings = get_settings()
 
 
-def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
-    """Return relevant knowledge-base chunks using full-text search.
+class RetrievalError(RuntimeError):
+    """Raised when evidence retrieval cannot be completed reliably."""
 
-    This is intentionally conservative: if the database is unavailable or no
-    rows match, the function returns an empty list so the chat endpoint can
-    mark the answer as ungrounded and escalate to a human.
+
+def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
+    """Return chunks meeting the configured vector-similarity threshold.
+
+    An empty list means retrieval completed successfully but found no relevant
+    chunks. Configuration, embedding, and database failures raise RetrievalError.
     """
     if not settings.DATABASE_URL:
-        return []
+        raise RetrievalError("DATABASE_URL is not configured")
 
     try:
         import psycopg
@@ -28,8 +31,11 @@ def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT kc.content,
-                           1 - (e.vector <=> %s::vector) AS similarity
+                      SELECT kc.id,
+                          kd.id,
+                          kd.title,
+                          kc.content,
+                          1 - (e.vector <=> %s::vector) AS similarity
                     FROM knowledge_chunks kc
                     JOIN knowledge_documents kd ON kd.id = kc."documentId"
                     JOIN embeddings e ON e."chunkId" = kc.id
@@ -40,10 +46,21 @@ def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
                     (vector_literal, limit),
                 )
                 rows = cur.fetchall()
-    except Exception:
-        return []
+    except Exception as exc:
+        raise RetrievalError("Knowledge-base retrieval failed") from exc
 
-    return [
-        {"content": row[0], "similarity": float(row[1]) if row[1] is not None else 0.0}
-        for row in rows
-    ]
+    chunks = []
+    for row in rows:
+        similarity = float(row[4]) if row[4] is not None else 0.0
+        if similarity < settings.RETRIEVAL_MIN_SIMILARITY:
+            continue
+        chunks.append(
+            {
+                "chunk_id": str(row[0]),
+                "document_id": str(row[1]),
+                "title": str(row[2]),
+                "content": row[3],
+                "similarity": similarity,
+            }
+        )
+    return chunks

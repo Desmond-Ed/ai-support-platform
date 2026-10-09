@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     LLM_INPUT_COST_PER_MILLION: float = 0.15
     LLM_OUTPUT_COST_PER_MILLION: float = 0.60
 
+    # Minimum cosine similarity for a retrieved chunk to be used as evidence.
+    RETRIEVAL_MIN_SIMILARITY: float = 0.72
+    # Minimum fraction of answer content words that must appear in retrieved context.
+    ANSWER_MIN_SUPPORT: float = 0.65
+
     # Node backend base URL, for any AI-service -> Node callbacks if ever needed.
     BACKEND_URL: str = "http://localhost:4000"
 

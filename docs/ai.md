@@ -22,6 +22,15 @@ fact.
    embedding batch job doesn't starve the request-handling Node process,
    and vice versa. Each can be scaled by replica count independently.
 
+## Data ownership across the service boundary
+
+Node owns users, tickets, conversations, auth, and knowledge-document status.
+Python owns the derived `knowledge_chunks` and `embeddings` tables and writes
+them directly through SQL; sending thousands of vector values over HTTP would
+be wasteful. The trade-off is that two services write to one database, and
+Python's raw SQL must track Prisma's column names. Moving document-status
+updates to Node is a planned follow-up.
+
 ## Phase 1 — Health check (sync)
 
 - **Call**: none yet between services; each exposes its own `/api/health`

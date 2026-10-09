@@ -23,6 +23,7 @@ backend/src/generated/
 
 # --- Python / AI service ---
 ai-service/venv/
+.venv/
 ai-service/__pycache__/
 ai-service/**/__pycache__/
 ai-service/.pytest_cache/

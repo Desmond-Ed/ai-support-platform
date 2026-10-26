@@ -7,7 +7,8 @@
 - Docker Compose publishes backend `4000`, frontend `5173`, AI service
   `8000`, PostgreSQL `5432`, and Redis host port `6380`.
 - The backend mounts `backend/src` into `/app/src` and uses `tsx watch`.
-- The API prefix is `/api`; the router currently mounts health and auth.
+- The API prefix is `/api`; the router mounts health, auth, users, conversations,
+  tickets, notifications, knowledge, admin, and analytics.
 - The auth cookie path is `/api/auth`, so refresh/logout requests use that
   path for the browser cookie to be sent.
 - PowerShell variables retain old values when a request assignment fails;
@@ -25,6 +26,6 @@
 
 ## Next implementation surface
 
-Add focused auth tests, then build authenticated user and conversation
-workflows. After that, implement Socket.IO event contracts, ticket lifecycle,
-AI request boundaries, and knowledge ingestion.
+Run the Playwright suite against a seeded local stack, add time-series analytics
+and audit-log views, and finish deployment hardening (secrets, tracing, and
+durable cost aggregation).

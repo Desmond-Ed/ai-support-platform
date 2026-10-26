@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const transactionClient = vi.hoisted(() => ({
-  ticketAssignment: { create: vi.fn() },
+  ticketAssignment: { create: vi.fn(), updateMany: vi.fn() },
   conversation: {
     findUniqueOrThrow: vi.fn(),
     update: vi.fn(),
@@ -31,6 +31,10 @@ describe('TicketRepository', () => {
 
     expect(result).toMatchObject({ ticketId: 'ticket-1', agentId: 'agent-1' });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transactionClient.ticketAssignment.updateMany).toHaveBeenCalledWith({
+      where: { ticketId: 'ticket-1', unassignedAt: null },
+      data: { unassignedAt: expect.any(Date) },
+    });
     expect(transactionClient.ticketAssignment.create).toHaveBeenCalledWith({
       data: { ticketId: 'ticket-1', agentId: 'agent-1' },
     });

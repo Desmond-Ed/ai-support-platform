@@ -8,7 +8,11 @@ def chunk_text(text: str, max_words: int = 180) -> list[str]:
     if max_words < 1:
         raise ValueError("max_words must be positive")
 
-    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]
+    paragraphs = [
+        paragraph.strip()
+        for paragraph in re.split(r"\n\s*\n", text)
+        if paragraph.strip()
+    ]
     chunks: list[str] = []
     for paragraph in paragraphs:
         words = paragraph.split()

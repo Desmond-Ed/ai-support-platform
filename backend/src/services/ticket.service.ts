@@ -2,6 +2,7 @@ import { prisma } from '../config/db.js';
 import { AppError } from '../utils/AppError.js';
 import { ConversationRepository } from '../repositories/ConversationRepository.js';
 import { TicketRepository } from '../repositories/TicketRepository.js';
+import { UserRepository } from '../repositories/UserRepository.js';
 import { NotificationService } from './notification.service.js';
 import type { AgentAvailability, Ticket, TicketAssignment } from '../generated/prisma/client.js';
 
@@ -51,6 +52,11 @@ export const TicketService = {
     const ticket = await TicketRepository.findById(ticketId);
     if (!ticket) {
       throw new AppError('Ticket not found', 404);
+    }
+
+    const agent = await UserRepository.findById(agentId);
+    if (!agent || !agent.isActive || (agent.role !== 'AGENT' && agent.role !== 'ADMIN')) {
+      throw new AppError('Assigned user is not an active agent', 400);
     }
 
     const assignment = await TicketRepository.assignAgent(ticketId, agentId, ticket.conversationId);

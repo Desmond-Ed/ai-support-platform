@@ -24,6 +24,10 @@ const notificationService = vi.hoisted(() => ({
   create: vi.fn(),
 }));
 
+const userRepository = vi.hoisted(() => ({
+  findById: vi.fn(),
+}));
+
 vi.mock('../src/repositories/TicketRepository.js', () => ({
   TicketRepository: ticketRepository,
 }));
@@ -31,6 +35,9 @@ vi.mock('../src/config/db.js', () => ({ prisma }));
 
 vi.mock('../src/repositories/ConversationRepository.js', () => ({
   ConversationRepository: conversationRepository,
+}));
+vi.mock('../src/repositories/UserRepository.js', () => ({
+  UserRepository: userRepository,
 }));
 
 vi.mock('../src/services/notification.service.js', () => ({
@@ -42,6 +49,7 @@ import { TicketService } from '../src/services/ticket.service.js';
 beforeEach(() => {
   vi.resetAllMocks();
   prisma.$transaction.mockImplementation((callback) => callback(transactionClient));
+  userRepository.findById.mockResolvedValue({ id: 'agent-1', role: 'AGENT', isActive: true });
 });
 
 describe('TicketService', () => {
@@ -94,7 +102,18 @@ describe('TicketService', () => {
     const result = await TicketService.assignAgent('ticket-1', 'agent-1');
 
     expect(result).toEqual({ id: 'assignment-1', ticketId: 'ticket-1', agentId: 'agent-1' });
+    expect(userRepository.findById).toHaveBeenCalledWith('agent-1');
     expect(ticketRepository.assignAgent).toHaveBeenCalledWith('ticket-1', 'agent-1', 'conversation-1');
+  });
+
+  it('rejects assignment to a non-agent user', async () => {
+    ticketRepository.findById.mockResolvedValue({ id: 'ticket-1', conversationId: 'conversation-1' });
+    userRepository.findById.mockResolvedValue({ id: 'customer-1', role: 'CUSTOMER', isActive: true });
+
+    await expect(TicketService.assignAgent('ticket-1', 'customer-1')).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    expect(ticketRepository.assignAgent).not.toHaveBeenCalled();
   });
 
   it('lists assigned tickets for an agent', async () => {

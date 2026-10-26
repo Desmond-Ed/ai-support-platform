@@ -30,7 +30,7 @@ async def ingest_knowledge_document(payload: dict) -> dict:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, title, content, "sourceType"
+                    SELECT content
                     FROM knowledge_documents
                     WHERE id = %s
                     """,
@@ -40,7 +40,7 @@ async def ingest_knowledge_document(payload: dict) -> dict:
                 if not row:
                     raise HTTPException(status_code=404, detail="Knowledge document not found")
 
-                document_id, title, content, source_type = row
+                content = row[0]
 
                 chunks = [
                     {"content": chunk, "index": index}
@@ -50,11 +50,18 @@ async def ingest_knowledge_document(payload: dict) -> dict:
                 if not chunks:
                     raise HTTPException(status_code=400, detail="Document content is empty")
 
+                cur.execute(
+                    'DELETE FROM knowledge_chunks WHERE "documentId" = %s',
+                    (document_id,),
+                )
+
                 vectors = embed_documents([chunk["content"] for chunk in chunks])
                 for chunk, vector in zip(chunks, vectors, strict=True):
                     cur.execute(
                         """
-                        INSERT INTO knowledge_chunks (id, "documentId", content, "chunkIndex", "createdAt")
+                        INSERT INTO knowledge_chunks (
+                            id, "documentId", content, "chunkIndex", "createdAt"
+                        )
                         VALUES (gen_random_uuid(), %s, %s, %s, NOW())
                         RETURNING id
                         """,

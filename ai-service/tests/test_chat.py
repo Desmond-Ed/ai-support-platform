@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api import chat as chat_api
+from app.main import app
 
 
 class FakeResponse:
@@ -16,7 +16,10 @@ class FakeGroundedLLM:
 
 class FakeUngroundedLLM:
     async def ainvoke(self, messages):
-        return FakeResponse("I do not have enough verified information to answer this; please contact a human agent.")
+        return FakeResponse(
+            "I do not have enough verified information to answer this; "
+            "please contact a human agent."
+        )
 
 
 def test_chat_uses_retrieval_and_marks_grounded(monkeypatch):

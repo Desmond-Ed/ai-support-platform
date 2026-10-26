@@ -40,8 +40,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
-      # prisma generate needs a DATABASE_URL and network access to Prisma's
-      # engine host; wired up properly once Phase 2 lands real models.
+      - run: npm test
 
   ai-service:
     name: AI service — lint & import check
@@ -58,6 +57,7 @@ jobs:
           cache-dependency-path: ai-service/requirements.txt
       - run: pip install -r requirements.txt
       - run: ruff check app
+      - run: python -m pytest -q
       - name: Import check (app boots without syntax/import errors)
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/db

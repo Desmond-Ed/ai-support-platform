@@ -96,6 +96,7 @@ query retrieval uses pgvector similarity with a degraded fallback. Socket.IO aut
 places clients in private user rooms, and provides server-side emitters for
 `ticket_updated`, `agent_assigned`, and `notification`. Resource-specific room
 authorization is enforced against conversation ownership and ticket customer or
-active assignment before room joins; the frontend exposes a reusable client and
-event hook. BullMQ workers, ticket tooling, admin workflows, and analytics
-remain planned work.
+active assignment before room joins (admins may subscribe to any conversation or
+ticket); the frontend exposes a reusable client and event hook. BullMQ knowledge
+ingestion, ticket lifecycle, admin user/knowledge workflows, notifications, and
+the analytics overview are implemented.

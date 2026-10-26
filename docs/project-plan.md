@@ -92,8 +92,8 @@
 
 ## Phase validation record
 
-- Backend: 37 Vitest tests passed; TypeScript build and ESLint passed.
-- AI service: 9 pytest tests passed.
+- Backend: 60 Vitest tests passed; TypeScript build and ESLint passed.
+- AI service: 14 pytest tests passed; Ruff passed.
 - Frontend: TypeScript/Vite build and ESLint passed.
 - Live API smoke: customer login, conversation creation, ticket creation, and
    customer ticket listing passed.

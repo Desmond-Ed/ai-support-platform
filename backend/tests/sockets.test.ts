@@ -78,6 +78,36 @@ describe('Socket.IO authentication', () => {
     ).resolves.toBe(false);
   });
 
+  it('allows admins to subscribe to any conversation', async () => {
+    findFirst.mockResolvedValue({ id: 'conversation-1' });
+
+    await expect(
+      canSubscribeToResource(
+        { sub: 'admin-1', role: 'ADMIN' },
+        { resource: 'conversation', resourceId: 'conversation-1' },
+      ),
+    ).resolves.toBe(true);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: 'conversation-1' },
+      select: { id: true },
+    });
+  });
+
+  it('allows admins to subscribe to any ticket', async () => {
+    findFirst.mockResolvedValue({ id: 'ticket-1' });
+
+    await expect(
+      canSubscribeToResource(
+        { sub: 'admin-1', role: 'ADMIN' },
+        { resource: 'ticket', resourceId: 'ticket-1' },
+      ),
+    ).resolves.toBe(true);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: 'ticket-1' },
+      select: { id: true },
+    });
+  });
+
   it('emits a conversation message to the conversation room', () => {
     const io = {
       to: vi.fn().mockReturnThis(),

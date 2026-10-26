@@ -293,7 +293,7 @@ export function CustomerChat({ token }: { token: string }) {
                     className="border-b border-line py-4 last:border-b-0"
                   >
                     {exchange.customerMessage && (
-                      <div data-testid="chat-message" className="mb-4">
+                      <div data-testid="chat-message" data-sender-type="CUSTOMER" className="mb-4">
                         <p className="mb-1 font-sans text-xs font-semibold uppercase tracking-wide text-muted-ink">Your question</p>
                         <p className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink">
                           {exchange.customerMessage.content}
@@ -301,7 +301,7 @@ export function CustomerChat({ token }: { token: string }) {
                       </div>
                     )}
                     {exchange.replies.map((message) => (
-                      <div data-testid="chat-message" key={message.id}>
+                      <div data-testid="chat-message" data-sender-type={message.senderType} key={message.id}>
                         <p className="mb-1 font-sans text-xs font-semibold uppercase tracking-wide text-muted-ink">
                           {senderLabel(message.senderType)}
                         </p>

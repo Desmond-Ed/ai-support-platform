@@ -27,6 +27,8 @@ ai-service/venv/
 ai-service/__pycache__/
 ai-service/**/__pycache__/
 ai-service/.pytest_cache/
+ai-service/.ruff_cache/
+.ruff_cache/
 ai-service/*.egg-info/
 **/*.pyc
 

@@ -27,10 +27,12 @@ test('customer chat sends a message and restores history after reload', async ({
 
   const messages = page.getByTestId('chat-message');
   const customerMessage = messages.filter({ hasText: messageText });
-  const nonCustomerMessage = messages.filter({ hasText: /AI|SYSTEM/ });
+  const replyMessage = page.locator(
+    '[data-testid="chat-message"][data-sender-type="AI"], [data-testid="chat-message"][data-sender-type="SYSTEM"]',
+  );
   await expect(customerMessage).toBeVisible({ timeout: 25000 });
   await expect(messages).toHaveCount(2, { timeout: 25000 });
-  await expect(nonCustomerMessage).toHaveCount(1, { timeout: 25000 });
+  await expect(replyMessage).toHaveCount(1, { timeout: 25000 });
 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Your conversations' })).toBeVisible();
@@ -39,7 +41,7 @@ test('customer chat sends a message and restores history after reload', async ({
   const restoredMessages = page.getByTestId('chat-message');
   await expect(restoredMessages.filter({ hasText: messageText })).toBeVisible({ timeout: 10000 });
   await expect(restoredMessages).toHaveCount(2);
-  await expect(restoredMessages.filter({ hasText: /AI|SYSTEM/ })).toHaveCount(1);
+  await expect(replyMessage).toHaveCount(1);
 
   await page.getByTestId('chat-handoff').click();
   await expect(page.getByTestId('chat-banner')).toBeVisible();

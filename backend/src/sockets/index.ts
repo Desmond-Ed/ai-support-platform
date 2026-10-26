@@ -38,9 +38,14 @@ export async function canSubscribeToResource(
     return Boolean(
       await prisma.conversation.findFirst({
         where:
-          user.role === 'CUSTOMER'
-            ? { id: subscription.resourceId, customerId: user.sub }
-            : { id: subscription.resourceId, OR: [{ customerId: user.sub }, { agentId: user.sub }] },
+          user.role === 'ADMIN'
+            ? { id: subscription.resourceId }
+            : user.role === 'CUSTOMER'
+              ? { id: subscription.resourceId, customerId: user.sub }
+              : {
+                  id: subscription.resourceId,
+                  OR: [{ customerId: user.sub }, { agentId: user.sub }],
+                },
         select: { id: true },
       }),
     );
@@ -49,15 +54,17 @@ export async function canSubscribeToResource(
   return Boolean(
     await prisma.ticket.findFirst({
       where:
-        user.role === 'CUSTOMER'
-          ? { id: subscription.resourceId, customerId: user.sub }
-          : {
-              id: subscription.resourceId,
-              OR: [
-                { customerId: user.sub },
-                { assignments: { some: { agentId: user.sub, unassignedAt: null } } },
-              ],
-            },
+        user.role === 'ADMIN'
+          ? { id: subscription.resourceId }
+          : user.role === 'CUSTOMER'
+            ? { id: subscription.resourceId, customerId: user.sub }
+            : {
+                id: subscription.resourceId,
+                OR: [
+                  { customerId: user.sub },
+                  { assignments: { some: { agentId: user.sub, unassignedAt: null } } },
+                ],
+              },
       select: { id: true },
     }),
   );

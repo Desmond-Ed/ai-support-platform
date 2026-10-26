@@ -19,10 +19,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
     evaluates the result for groundedness and escalation.
     """
     contexts = retrieve_context(request.message)
-    grounded = bool(contexts)
-    confidence = max((item.get("similarity", 0.0) for item in contexts), default=0.0)
 
-    if grounded:
+    if contexts:
         context_text = "\n\n".join(item["content"] for item in contexts)
         system_prompt = (
             "You are a helpful support assistant. Answer using only the provided "

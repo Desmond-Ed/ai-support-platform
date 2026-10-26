@@ -83,8 +83,10 @@ shape.
 | PATCH | `/api/tickets/:id/status` | AGENT or ADMIN JWT | Updates a ticket status. |
 | PATCH | `/api/tickets/:id/assign` | AGENT or ADMIN JWT | Assigns an agent to a ticket. |
 
-The current Python chat implementation calls the configured LLM directly.
-RAG retrieval and groundedness evaluation remain future additions.
+The Python chat implementation retrieves pgvector knowledge-base context,
+calls the configured LLM, and returns groundedness, confidence, and escalation
+signals. When retrieval is unavailable or no context matches, it degrades to an
+explicit ungrounded reply that recommends a human agent.
 
 ### Notifications
 

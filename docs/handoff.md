@@ -28,14 +28,14 @@ npm run build
 npx --no-install tsc --noEmit
 ```
 
-The backend test suite currently passes 37 tests, including authentication,
+The backend test suite currently passes 60 tests, including authentication,
 profile authorization, conversation ownership, ticket behavior, notification
-behavior, knowledge queue handoff, and Socket.IO authentication. The Python
-service tests currently pass 9 tests covering chat grounding, health, bounded
-document chunking, and embeddings; database-backed
-ingestion imports its database driver lazily so local health/chat tests do not
-require it. On Windows, install the requirements needed for database-backed
-ingestion without `uvloop`, which is Unix-only.
+behavior, knowledge queue handoff, and Socket.IO authorization. The Python
+service tests currently pass 14 tests covering chat grounding, health, bounded
+document chunking, embedding contracts, token-usage extraction, and knowledge
+ingestion SQL; database-backed ingestion imports its database driver lazily so
+local health/chat tests do not require it. On Windows, install the requirements
+needed for database-backed ingestion without `uvloop`, which is Unix-only.
 
 ## Auth smoke test expectations
 
@@ -69,11 +69,11 @@ Use `-UseBasicParsing` with Windows PowerShell `Invoke-WebRequest`.
 - The live local frontend is currently served at `http://localhost:8080` when
   run directly with Vite; Compose still uses port `5173`.
 
-## Workspace trap
+## Workspace check
 
-There have been two similarly named workspace copies. Docker must be started
-from the same checkout that contains the current edits. Confirm the mounted
-source with:
+The duplicate nested checkout has been removed; the repository root is the only
+workspace copy. Docker must be started from the checkout that contains the
+current edits. Confirm the mounted source with:
 
 ```powershell
 docker exec asp-backend sed -n '1,30p' /app/src/routes/index.ts
@@ -83,8 +83,8 @@ It must show `authRouter` and `router.use('/auth', authRouter)`.
 
 ## Validation status
 
-- Backend: 37 tests, build, and lint pass.
-- AI service: 9 tests pass.
+- Backend: 60 tests, build, and lint pass.
+- AI service: 14 tests, lint, and import check pass.
 - Frontend: build and lint pass.
 - Live customer API flow passes login, conversation creation, ticket creation,
   and ticket listing.

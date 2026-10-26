@@ -79,6 +79,10 @@ export const TicketRepository = {
     conversationId: string,
   ): Promise<TicketAssignment> {
     return prisma.$transaction(async (tx) => {
+      await tx.ticketAssignment.updateMany({
+        where: { ticketId, unassignedAt: null },
+        data: { unassignedAt: new Date() },
+      });
       const assignment = await tx.ticketAssignment.create({
         data: { ticketId, agentId },
       });

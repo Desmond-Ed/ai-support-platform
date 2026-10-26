@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.health import router as health_router
 from app.api.chat import router as chat_router
+from app.api.health import router as health_router
 from app.api.knowledge import router as knowledge_router
 from app.core.config import get_settings
 

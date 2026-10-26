@@ -1,11 +1,13 @@
 # Database Documentation
 
 ## Status
-The full Prisma schema, initial migration, generated client, and Docker
-PostgreSQL environment are present. Authentication has been exercised against
-the running database: users and hashed refresh-token rows are created,
-refresh tokens rotate, and logout revokes the current token. The broader
-application entities are schema foundations and do not yet have API workflows.
+The full Prisma schema, migrations, generated client, and Docker PostgreSQL
+environment are present. Authentication has been exercised against the running
+database: users and hashed refresh-token rows are created, refresh tokens
+rotate, and logout revokes the current token. Conversations, messages, tickets,
+assignments, notifications, knowledge documents, and analytics-backed entities
+now have implemented API workflows. Knowledge chunks and embeddings are written
+by the Python ingestion path as documented below.
 
 ## Entity list vs. spec (§4)
 

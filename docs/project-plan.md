@@ -82,23 +82,97 @@
 - AI responses expose token usage and estimated cost, with structured usage
    logging.
 
+### Operational analytics, audit visibility, and knowledge moderation
+
+- Admin knowledge moderation queue/detail APIs with status/search filters,
+  pagination, optimistic `moderationVersion`, approval readiness checks, bounded
+  rejection reasons, archive, and restore.
+- Moderation writes and matching audits share one transaction; stale versions
+  and invalid transitions return `409` without mutation or audit.
+- Ticket assignment and status transitions lock the ticket row, treat duplicate
+  same-target requests as no-ops, and serialize competing changes. Concurrent
+  different-agent assignments and competing status changes produce contiguous
+  audit chains; forced audit failures roll back assignment, ticket, and
+  conversation state.
+- Failed-ingestion retry is Node-owned, queue-aware, claims the document,
+  increments attempts, uses a unique retry job ID, and restores `FAILED` if
+  enqueueing fails.
+- Initial ingestion enqueue failure is persisted only while the document is
+  still `PENDING` at ingestion attempt `0`; the failure audit is written only
+  when that conditional update applies, so newer states or attempts are not
+  overwritten.
+- Knowledge submission, moderation, retry, ticket assignment/status, and admin
+  user updates now create allowlisted, scalar/type-validated audit records.
+  Audit reads support actor/entity/action/date filters and pagination.
+- Ticket `resolvedAt` is set on resolution, retained on close, cleared on reopen,
+  and reset on re-resolution; the index supports resolution analytics.
+- Time-series analytics returns inclusive UTC days, zero-filled series, summary
+  totals, and average resolution time.
+- Frontend operations dashboard adds time-series charts/table, knowledge
+  moderation controls, and audit-log filtering while preserving customer/agent
+  flows.
+- Admin date filters keep draft inputs separate from applied ranges: audit dates
+  apply via Apply dates/Clear dates, analytics presets apply immediately, and
+  analytics Apply re-applies the draft range (including a reload when unchanged).
+- Python retrieval now requires both ingestion `READY` and moderation
+  `APPROVED`, with both mocked and database-backed coverage.
+- Database-backed integration tests cover concurrent moderation, audit rollback,
+  approval readiness, stale versions, ticket assignment/status concurrency,
+  ticket resolution timestamps, admin-user audit/no-op behavior, and analytics
+  aggregation.
+- Clean and forward migration paths were verified; the isolated E2E stack now
+  covers moderation, retry recovery, role restrictions, audit filtering, and the
+  new admin UI.
+
+### E2E reliability and CI
+
+- Isolated `docker-compose.e2e.yml` stack with dedicated containers, volumes,
+  database, network, and host ports (`5174`, `4001`, `8001`, `5433`, `6381`).
+- Deterministic OpenAI-compatible stub for embeddings and chat, including a
+  provider-outage mode that exercises the real degraded-escalation path.
+- Seeded E2E identities plus API-driven unique customers and agents for parallel
+  test isolation.
+- Confirmed-session login/reload helpers replace fixed sleeps, removing the
+  parallel-load localStorage race.
+- Full browser coverage for auth, authorization, ticket persistence/assignment,
+  grounded chat, idempotent handoff, provider outage, realtime replies,
+  resolution and assignment notifications, mark-all-read, and analytics.
+- Idempotent handoff now persists a single SYSTEM handoff message without
+  duplicating it in the degraded path; backend unit coverage asserts it.
+- GitHub Actions E2E job builds the isolated stack, applies committed
+  migrations, seeds identities, runs Playwright, uploads artifacts, and always
+  tears down.
+
 ## Remaining next
 
-1. Install the Playwright Chromium browser in a network-enabled environment and
-   run the smoke suite; expand coverage beyond the health/UI smoke test.
-2. Add time-series analytics, audit-log views, and full knowledge moderation.
-3. Configure hosted deployment secrets, external tracing, and durable cost
-    aggregation.
+1. Configure hosted deployment secrets, external tracing, and durable cost
+   aggregation.
+2. Extend CI beyond Chromium to cross-browser runs if the product requires it.
+3. Consider reconciliation for ingestion jobs abandoned by a worker crash
+   (currently BullMQ owns retries and Node exposes manual retry).
 
 ## Phase validation record
 
-- Backend: 37 Vitest tests passed; TypeScript build and ESLint passed.
-- AI service: 9 pytest tests passed.
+- Backend: 70 Vitest tests passed; TypeScript build and ESLint passed.
+- Backend integration: 11 database-backed tests passed against isolated
+  PostgreSQL.
+- AI service: 15 pytest tests passed, 1 skipped (the opt-in DB test); Ruff
+  passed. The skipped database-backed retrieval test passed separately with the
+  isolated database.
 - Frontend: TypeScript/Vite build and ESLint passed.
-- Live API smoke: customer login, conversation creation, ticket creation, and
-   customer ticket listing passed.
-- Playwright browser installation remains blocked by external Chromium download
-   timeouts; the test project and dependencies are present.
+- Latest E2E validation after the audit fixes: 37 Playwright tests passed with
+  4 workers.
+- Earlier repeatability evidence, from before those later audit fixes: 74
+  Playwright tests passed with `--repeat-each=2` and 4 workers. That run does not
+  cover the subsequent fixes.
+- Migration: clean apply of all three migrations passed; the moderation
+  migration was also applied over a legacy document row and preserved data.
+- The two bounded follow-up tasks (initial enqueue-failure guard and ticket
+  transaction integration tests) passed Astra audit. This is not full-phase
+  independent audit approval.
+- Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1
+  (frontend, backend, backend integration, AI service, E2E). Deployment has not
+  completed.
 
 ## Definition of done for each feature
 

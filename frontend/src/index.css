@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+@theme {
+  --color-ground: #f4f1ea;
+  --color-ink: #1c1917;
+  --color-muted-ink: #57534e;
+  --color-line: #d6d3d1;
+  --color-amber-tint: #fef3c7;
+  --color-amber-ink: #78350f;
+  --color-resolved-tint: #dcfce7;
+  --color-resolved-ink: #166534;
+  --font-serif: "Newsreader", "Source Serif 4", Georgia, serif;
+  --font-sans: "Geist", "IBM Plex Sans", system-ui, sans-serif;
+}

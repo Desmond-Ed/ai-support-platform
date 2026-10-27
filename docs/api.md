@@ -1,7 +1,8 @@
 # API Documentation
 
-Living document - updated as each phase adds real endpoints. Health and auth
-are currently implemented.
+Living document - updated as each phase adds real endpoints. The operational
+analytics, audit, and knowledge-moderation surface is implemented alongside the
+existing customer, agent, notification, and admin workflows.
 
 ## Conventions (established now, applied from Phase 3 onward)
 
@@ -48,6 +49,7 @@ are currently implemented.
 - `POST /api/conversations` — access JWT — Creates an empty AI-handled conversation for the authenticated customer.
 - `GET /api/conversations/:id/messages` — access JWT — Returns the latest 200 messages, oldest first; customers must own the conversation, agents must be assigned to it, and admins may access any conversation.
 - `POST /api/conversations/:id/messages` — access JWT — Validates ownership, persists the customer message, calls the AI service, and persists the AI reply.
+- `POST /api/conversations/:id/handoff` — CUSTOMER access JWT — Escalates an owned conversation to a human agent and returns the conversation. Repeated requests are safe and do not create duplicate tickets; other roles and non-owners receive `404`.
 - `POST /api/conversations/:id/agent-messages` — AGENT or ADMIN JWT — Validates role + assignment, persists an agent message, and moves the conversation to `WITH_AGENT`.
 
 Message creation calls the Python service at `POST /api/chat`. Node persists
@@ -82,8 +84,10 @@ shape.
 | PATCH | `/api/tickets/:id/status` | AGENT or ADMIN JWT | Updates a ticket status. |
 | PATCH | `/api/tickets/:id/assign` | AGENT or ADMIN JWT | Assigns an agent to a ticket. |
 
-The current Python chat implementation calls the configured LLM directly.
-RAG retrieval and groundedness evaluation remain future additions.
+The Python chat implementation retrieves pgvector knowledge-base context,
+calls the configured LLM, and returns groundedness, confidence, and escalation
+signals. When retrieval is unavailable or no context matches, it degrades to an
+explicit ungrounded reply that recommends a human agent.
 
 ### Notifications
 
@@ -98,13 +102,50 @@ the existing Socket.IO `notification` event.
 
 ### Admin and analytics
 
+All `/api/admin/*` routes require an `ADMIN` access token. Analytics routes
+require `AGENT` or `ADMIN`. Client-supplied roles are ignored.
+
 | Method | Path | Auth | Description |
 | ------ | ---- | ---- | ----------- |
-| GET | `/api/admin/users` | ADMIN | Lists sanitized user records. |
-| PATCH | `/api/admin/users/:id` | ADMIN | Updates a user's role or active state. |
-| GET | `/api/admin/knowledge` | ADMIN | Lists all knowledge documents and ingestion status. |
+| GET | `/api/admin/users` | ADMIN | Lists sanitized user records; never includes `passwordHash`. |
+| PATCH | `/api/admin/users/:id` | ADMIN | Updates role or active state. No-op updates do not create audits; effective changes create `USER_UPDATED`. |
+| GET | `/api/admin/knowledge` | ADMIN | Paginated moderation queue. Filters: `status`, `moderationStatus`, `search`, `page`, `pageSize`. |
+| GET | `/api/admin/knowledge/:id` | ADMIN | Returns one knowledge document with uploader, moderator, and moderation/retry state. |
+| PATCH | `/api/admin/knowledge/:id/moderation` | ADMIN | Applies `APPROVE`, `REJECT`, `ARCHIVE`, or `RESTORE` using `expectedVersion`. |
+| POST | `/api/admin/knowledge/:id/retry` | ADMIN | Retries failed ingestion, claims the job, and returns `202` with a unique retry job ID. |
+| GET | `/api/admin/audit-logs` | ADMIN | Paginated audit history. Filters: `action`, `actorId`, `entityType`, `entityId`, `from`, `to`, `page`, `pageSize`. |
 | GET | `/api/analytics/overview` | AGENT or ADMIN | Returns ticket, conversation, AI-resolution, notification, and knowledge counts. |
+| GET | `/api/analytics/timeseries` | AGENT or ADMIN | Returns inclusive UTC daily series and a summary for `from`/`to` (`YYYY-MM-DD`, maximum 90 days). |
 
-## Future endpoints
+#### Knowledge moderation contract
 
-- Richer time-series analytics, audit-log views, and full knowledge moderation.
+Moderation is Node-owned and versioned with `moderationVersion`; a stale
+`expectedVersion` returns `409` without changing state. `APPROVE` requires
+ingestion `status = READY`. `REJECT` requires a bounded `reason` and stores it.
+`ARCHIVE` removes an approved document from retrieval; `RESTORE` returns it to
+review without publishing it. Failed ingestion can be retried only from
+`FAILED`; a current BullMQ job causes `409`, and enqueue failure restores
+`FAILED` and records a failure audit. Knowledge content and source type are
+immutable in this phase; a revision is a new document.
+
+Retrieval publication requires both `status = READY` and
+`moderationStatus = APPROVED`. Audit metadata is allowlisted and never includes
+document content, credentials, or tokens.
+
+The current audit action set is:
+
+- `USER_UPDATED`
+- `TICKET_ASSIGNED`
+- `TICKET_STATUS_CHANGED`
+- `KNOWLEDGE_SUBMITTED`
+- `KNOWLEDGE_APPROVED`
+- `KNOWLEDGE_REJECTED`
+- `KNOWLEDGE_ARCHIVED`
+- `KNOWLEDGE_RESTORED`
+- `KNOWLEDGE_INGESTION_RETRY_REQUESTED`
+- `KNOWLEDGE_INGESTION_RETRY_ENQUEUE_FAILED`
+
+Ticket status transitions persist `resolvedAt` as follows: `RESOLVED` sets it,
+`CLOSED` retains it, reopening (`OPEN` or `IN_PROGRESS`) clears it, and
+re-resolution sets a new timestamp. The analytics average-resolution metric is
+computed only from persisted resolution timestamps.

@@ -52,6 +52,13 @@ beforeEach(() => {
     subject: 'Conversation #conversa',
     status: 'OPEN',
   });
+  conversationRepository.createSystemMessage.mockResolvedValue({
+    id: 'system-message-1',
+    conversationId: 'conversation-1',
+    senderType: 'SYSTEM',
+    content: 'A support agent will follow up shortly.',
+    createdAt: new Date(),
+  });
 });
 
 describe('ConversationService', () => {
@@ -73,6 +80,69 @@ describe('ConversationService', () => {
 
     expect(result).toBe(conversation);
     expect(conversationRepository.create).toHaveBeenCalledWith('customer-1');
+  });
+
+  it('hands off an owned customer conversation', async () => {
+    const conversation = {
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      status: 'ESCALATED',
+    };
+    conversationRepository.findByIdForCustomer.mockResolvedValue({
+      ...conversation,
+      status: 'AI_HANDLING',
+    });
+    conversationRepository.findById.mockResolvedValue(conversation);
+
+    const result = await ConversationService.handoffForCustomer(
+      'conversation-1',
+      'customer-1',
+      'CUSTOMER',
+    );
+
+    expect(result).toBe(conversation);
+    expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledWith(
+      'conversation-1',
+      'A support agent will follow up shortly.',
+    );
+    expect(notificationService.create).toHaveBeenCalledWith(
+      'customer-1',
+      'AI_HANDOFF',
+      expect.objectContaining({ type: 'AI_HANDOFF' }),
+    );
+  });
+
+  it('returns 404 when a customer does not own the conversation', async () => {
+    conversationRepository.findByIdForCustomer.mockResolvedValue(null);
+
+    await expect(
+      ConversationService.handoffForCustomer('conversation-1', 'customer-2', 'CUSTOMER'),
+    ).rejects.toMatchObject({ statusCode: 404, message: 'Conversation not found' });
+    expect(transactionClient.ticket.create).not.toHaveBeenCalled();
+  });
+
+  it('does not create a second ticket when handoff is requested twice', async () => {
+    const conversation = {
+      id: 'conversation-1',
+      customerId: 'customer-1',
+      status: 'ESCALATED',
+    };
+    conversationRepository.findByIdForCustomer.mockResolvedValue({
+      ...conversation,
+      status: 'AI_HANDLING',
+    });
+    conversationRepository.findById.mockResolvedValue(conversation);
+    transactionClient.conversation.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await ConversationService.handoffForCustomer('conversation-1', 'customer-1', 'CUSTOMER');
+    await ConversationService.handoffForCustomer('conversation-1', 'customer-1', 'CUSTOMER');
+
+    expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledTimes(1);
   });
 
   it('lists history for the customer who owns the conversation', async () => {
@@ -190,7 +260,13 @@ describe('ConversationService', () => {
   it('escalates to a human when the AI marks the reply as escalated', async () => {
     const customerMessage = { id: 'message-1', conversationId: 'conversation-1', senderType: 'CUSTOMER' };
     const assistantMessage = { id: 'message-2', conversationId: 'conversation-1', senderType: 'AI' };
-    const handoffMessage = { id: 'message-3', conversationId: 'conversation-1', senderType: 'SYSTEM' };
+    const handoffMessage = {
+      id: 'message-3',
+      conversationId: 'conversation-1',
+      senderType: 'SYSTEM',
+      content: 'A support agent will follow up shortly.',
+      createdAt: new Date(),
+    };
 
     conversationRepository.findByIdForCustomer.mockResolvedValue({
       id: 'conversation-1',
@@ -225,6 +301,10 @@ describe('ConversationService', () => {
         subject: expect.any(String),
       }),
     });
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledWith(
+      'conversation-1',
+      'A support agent will follow up shortly.',
+    );
     expect(notificationService.create).toHaveBeenCalledWith(
       'customer-1',
       'AI_HANDOFF',
@@ -262,7 +342,7 @@ describe('ConversationService', () => {
 
     expect(result.assistantMessage).toEqual(degradedMessage);
     expect(result.degraded).toBe(true);
-    expect(conversationRepository.createSystemMessage).toHaveBeenCalled();
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledTimes(1);
     expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
   });
 

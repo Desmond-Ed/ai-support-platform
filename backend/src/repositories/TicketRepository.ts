@@ -22,6 +22,10 @@ export const TicketRepository = {
     return db.ticket.findUnique({ where: { id: ticketId } });
   },
 
+  async lockById(ticketId: string, db: Db = prisma): Promise<void> {
+    await db.$queryRaw`SELECT id FROM "tickets" WHERE id = ${ticketId} FOR UPDATE`;
+  },
+
   async updateStatus(
     ticketId: string,
     status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED',
@@ -29,7 +33,10 @@ export const TicketRepository = {
   ): Promise<Ticket> {
     return db.ticket.update({
       where: { id: ticketId },
-      data: { status },
+      data: {
+        status,
+        ...(status === 'OPEN' || status === 'IN_PROGRESS' ? { resolvedAt: null } : {}),
+      },
     });
   },
 
@@ -73,27 +80,35 @@ export const TicketRepository = {
     });
   },
 
-  async assignAgent(
+  async findActiveAssignment(
+    ticketId: string,
+    db: Db = prisma,
+  ): Promise<TicketAssignment | null> {
+    return db.ticketAssignment.findFirst({
+      where: { ticketId, unassignedAt: null },
+      orderBy: { assignedAt: 'desc' },
+    });
+  },
+
+  async unassignActive(
+    ticketId: string,
+    unassignedAt: Date,
+    db: Db = prisma,
+  ): Promise<number> {
+    const result = await db.ticketAssignment.updateMany({
+      where: { ticketId, unassignedAt: null },
+      data: { unassignedAt },
+    });
+    return result.count;
+  },
+
+  async createAssignment(
     ticketId: string,
     agentId: string,
-    conversationId: string,
+    db: Db = prisma,
   ): Promise<TicketAssignment> {
-    return prisma.$transaction(async (tx) => {
-      const assignment = await tx.ticketAssignment.create({
-        data: { ticketId, agentId },
-      });
-      const conversation = await tx.conversation.findUniqueOrThrow({
-        where: { id: conversationId },
-        select: { status: true },
-      });
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: {
-          agentId,
-          ...(conversation.status === 'ESCALATED' ? { status: 'WITH_AGENT' } : {}),
-        },
-      });
-      return assignment;
+    return db.ticketAssignment.create({
+      data: { ticketId, agentId },
     });
   },
 

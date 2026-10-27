@@ -88,14 +88,32 @@ revokes it. Each refresh JWT includes a random `jti` so tokens issued for the
 same user in the same second remain distinct; `jti` is not the Prisma row ID.
 
 The backend runs on port 4000, the AI service on 8000, and the frontend on
-5173 in Docker Compose. Knowledge document creation enqueues asynchronous
-ingestion after persisting a pending document; the AI service performs bounded
-paragraph-aware chunking. Provider-backed embeddings and pgvector writes are
-implemented with `text-embedding-3-small` and validated at 1536 dimensions;
-query retrieval uses pgvector similarity with a degraded fallback. Socket.IO authenticates access JWTs during connection,
-places clients in private user rooms, and provides server-side emitters for
-`ticket_updated`, `agent_assigned`, and `notification`. Resource-specific room
-authorization is enforced against conversation ownership and ticket customer or
-active assignment before room joins; the frontend exposes a reusable client and
-event hook. BullMQ workers, ticket tooling, admin workflows, and analytics
-remain planned work.
+5173 in Docker Compose. Knowledge document creation persists `PENDING`, writes
+a submission audit, and enqueues asynchronous ingestion with a deterministic job
+ID; the AI service performs bounded paragraph-aware chunking. Provider-backed
+embeddings and pgvector writes use `text-embedding-3-small` and are validated at
+1536 dimensions. Retrieval only uses chunks whose document is both ingestion
+`READY` and moderation `APPROVED`, with a conservative degraded fallback.
+
+Socket.IO authenticates access JWTs during connection, places clients in private
+user rooms, and provides server-side emitters for `ticket_updated`,
+`agent_assigned`, and `notification`. Resource-specific room authorization is
+enforced against conversation ownership and ticket customer or active assignment
+before room joins (admins may subscribe to any conversation or ticket); the
+frontend exposes a reusable client and event hook.
+
+Operational state is Node-owned. Moderation transitions use
+`moderationVersion` for optimistic concurrency and audit in the same
+transaction; ingestion retry is claimed before enqueueing and restores `FAILED`
+if enqueueing fails. Ticket assignment/status changes and admin user updates are
+transactional with audits. Ticket `resolvedAt` is maintained across resolve,
+close, reopen, and re-resolve transitions. Analytics exposes an inclusive UTC
+time-series and summary, and the admin audit view applies server-side filters
+and an allowlisted metadata projection. The frontend operations dashboard
+provides the time-series view, moderation queue/detail actions, and audit
+filters for admins.
+
+Local validation covers backend unit/integration tests, frontend build/lint,
+AI tests/Ruff including a database-backed retrieval test, a clean migration, a
+forward migration over legacy data, and the full isolated Playwright suite.
+Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1.

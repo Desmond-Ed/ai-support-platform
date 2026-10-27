@@ -21,6 +21,7 @@ async function ensureEscalation(
   conversationId: string,
   customerId: string,
   fallbackMessage: string,
+  options?: { systemMessage?: string },
 ): Promise<void> {
   const ticket = await prisma.$transaction(async (tx) => {
     const claim = await tx.conversation.updateMany({
@@ -44,6 +45,21 @@ async function ensureEscalation(
   });
   if (!ticket) {
     return;
+  }
+
+  if (options?.systemMessage) {
+    const handoffMessage = await ConversationRepository.createSystemMessage(
+      conversationId,
+      options.systemMessage,
+    );
+    emitConversationMessage?.(conversationId, {
+      messageId: handoffMessage.id,
+      conversationId,
+      senderType: 'SYSTEM',
+      senderId: 'system',
+      content: handoffMessage.content,
+      createdAt: handoffMessage.createdAt.toISOString(),
+    });
   }
 
   const escalationMessage = {
@@ -85,6 +101,29 @@ export const ConversationService = {
 
   async createForCustomer(customerId: string): Promise<Conversation> {
     return ConversationRepository.create(customerId);
+  },
+
+  async handoffForCustomer(
+    conversationId: string,
+    customerId: string,
+    requesterRole: Role,
+  ): Promise<Conversation> {
+    const conversation = requesterRole === 'CUSTOMER'
+      ? await ConversationRepository.findByIdForCustomer(conversationId, customerId)
+      : null;
+    if (!conversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+
+    await ensureEscalation(conversationId, customerId, 'Customer requested a human support agent.', {
+      systemMessage: 'A support agent will follow up shortly.',
+    });
+
+    const updatedConversation = await ConversationRepository.findById(conversationId);
+    if (!updatedConversation) {
+      throw new AppError('Conversation not found', 404);
+    }
+    return updatedConversation;
   },
 
   async listMessages(conversationId: string, requesterId: string, requesterRole: Role): Promise<Message[]> {
@@ -145,7 +184,9 @@ export const ConversationService = {
       });
 
       if (aiReply.shouldEscalate) {
-        await ensureEscalation(conversationId, customerId, aiReply.content);
+        await ensureEscalation(conversationId, customerId, aiReply.content, {
+          systemMessage: 'A support agent will follow up shortly.',
+        });
       }
 
       return { customerMessage, assistantMessage };

@@ -6,6 +6,18 @@ export const knowledgeIngestionQueue = new Queue('knowledge-ingestion', {
   connection: redisConnection,
 });
 
+export function knowledgeIngestionJobId(documentId: string, attempt: number): string {
+  return attempt <= 0
+    ? `knowledge-document-${documentId}`
+    : `knowledge-document-${documentId}-retry-${attempt}`;
+}
+
+export async function getKnowledgeIngestionJobState(jobId: string): Promise<string | null> {
+  const job = await knowledgeIngestionQueue.getJob(jobId);
+  if (!job) return null;
+  return job.getState();
+}
+
 export function startKnowledgeIngestionWorker(): void {
   new Worker(
     'knowledge-ingestion',

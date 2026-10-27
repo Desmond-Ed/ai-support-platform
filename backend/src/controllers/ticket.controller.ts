@@ -70,7 +70,11 @@ export const TicketController = {
       throw new AppError('status is required', 400);
     }
 
-    const ticket = await TicketService.updateStatus(req.params.id, payload.status);
+    if (!req.user) {
+      throw new AppError('Not authenticated', 401);
+    }
+
+    const ticket = await TicketService.updateStatus(req.params.id, payload.status, req.user.id);
     res.status(200).json({ ticket });
   },
 
@@ -84,7 +88,15 @@ export const TicketController = {
       throw new AppError('agentId is required', 400);
     }
 
-    const assignment = await TicketService.assignAgent(req.params.id, payload.agentId);
+    if (!req.user) {
+      throw new AppError('Not authenticated', 401);
+    }
+
+    const assignment = await TicketService.assignAgent(
+      req.params.id,
+      payload.agentId,
+      req.user.id,
+    );
     res.status(200).json({ assignment });
   },
 };

@@ -2,91 +2,134 @@
 
 ## Current state
 
-The active project is `C:\Users\USER\Documents\ai-support-platform`.
-The backend is a Node.js/Express/TypeScript service under `backend/` and
-has working authentication routes mounted at `/api/auth`. The Docker backend
-listens on port 4000. The auth smoke test passed for login, refresh, logout,
-and refresh-after-logout rejection.
+The active project is `C:\Users\USER\Documents\ai-support-platform`, branch
+`phase5-chat-ui`. The customer-to-agent workflow plus operational analytics,
+audit visibility, and knowledge moderation are implemented and verified locally
+and in hosted CI, including database-backed integration tests and browser E2E
+coverage.
 
-## Start the backend
+- Backend: Node.js/Express/TypeScript under `backend/`, API prefix `/api`.
+- Frontend: React/Vite under `frontend/`.
+- AI service: Python/FastAPI under `ai-service/`.
+- Development Compose stack: frontend `5173`, backend `4000`, AI `8000`,
+  PostgreSQL `5432`, Redis `6380`.
+- Isolated E2E Compose stack: frontend `5174`, backend `4001`, AI `8001`,
+  PostgreSQL `5433`, Redis `6381`.
 
-Run from the repository root:
-
-```powershell
-cd C:\Users\USER\Documents\ai-support-platform
-docker compose up --build backend
-```
-
-Leave that terminal attached. Use a second terminal for requests. Do not run
-`npm run dev` simultaneously with Docker because both bind port 4000.
+Do not use the development database for E2E runs, and do not reset its volumes.
 
 ## Validate code
 
 ```powershell
 cd C:\Users\USER\Documents\ai-support-platform\backend
+npm test
+npm run test:integration   # requires isolated PostgreSQL on localhost:5433
 npm run build
-npx --no-install tsc --noEmit
+npm run lint
+
+cd ..\frontend
+npm run build
+npm run lint
+
+cd ..\ai-service
+..\.venv\Scripts\python.exe -m pytest -q
+..\.venv\Scripts\python.exe -m ruff check .
 ```
 
-The backend test suite currently passes 37 tests, including authentication,
-profile authorization, conversation ownership, ticket behavior, notification
-behavior, knowledge queue handoff, and Socket.IO authentication. The Python
-service tests currently pass 9 tests covering chat grounding, health, bounded
-document chunking, and embeddings; database-backed
-ingestion imports its database driver lazily so local health/chat tests do not
-require it. On Windows, install the requirements needed for database-backed
-ingestion without `uvloop`, which is Unix-only.
+## Run the isolated E2E stack
 
-## Auth smoke test expectations
+```powershell
+cd C:\Users\USER\Documents\ai-support-platform
+docker compose -f docker-compose.e2e.yml up -d --build --wait
+docker compose -f docker-compose.e2e.yml exec -T backend npx prisma migrate deploy
+docker compose -f docker-compose.e2e.yml exec -T backend npm run db:seed:e2e
 
-- Register or login: `200` for login, `201` for register.
-- Refresh with the same PowerShell web session: `200`.
-- Logout: `204`.
-- Refresh after logout: `401`.
+cd e2e
+npm test
+```
 
-Use `-UseBasicParsing` with Windows PowerShell `Invoke-WebRequest`.
+From `e2e/`, `npm run test:ci` performs the same sequence. Tear down with
+`npm run stack:down`. The AI service points at a deterministic local stub; no
+paid provider credentials are needed.
+
+## E2E architecture
+
+- Specs live in `e2e/*.spec.ts`; shared helpers live in `e2e/support/`.
+- `global-setup.ts` waits for backend health, waits for a unique refund fixture
+  to ingest, then approves it through the moderation API before chat tests.
+- The deterministic stub returns token-aware lexical embeddings. Its control
+  endpoint (`http://localhost:8082/control/fail-embeddings`) fails an exact
+  embedding input count; the retry test uses a 13-chunk document so concurrent
+  chat embedding does not fail. `operations.spec.ts` is serial within its file.
+- Login helpers wait for `data-testid="app-shell"`, a matching
+  `data-authenticated`/`data-role`, and a confirmed `/api/users/me` session
+  before reloading. Do not replace this with fixed sleeps.
+- Realtime readiness uses `data-socket-connected`; customer chat readiness uses
+  `data-loaded` and `data-subscribed`.
+- Unique customers are created per test; shared mutable notification state is
+  avoided. Dynamic agents are registered then promoted by an admin.
+- `SIMULATE_AI_OUTAGE` makes the stub return HTTP 500 so the suite verifies the
+  persisted degraded escalation rather than a fake AI reply.
+- Prisma 7 uses the repository-root `backend/prisma.config.ts` with
+  `import 'dotenv/config'`. Migration commands must run where that config is
+  discoverable (the backend working directory/container).
 
 ## Important implementation notes
 
-- Refresh tokens are stored as SHA-256 hashes, never raw values.
-- `jti` is a random UUID used to ensure refresh JWT uniqueness. It does not
-  equal the Prisma `RefreshToken.id`.
-- Registration never accepts a role and creates CUSTOMER accounts through
-  repository/database defaults.
-- The access-token role is intentionally stateless; role changes can remain
-  stale until the access token expires.
-- Refresh rotation uses a conditional revoke inside the transaction before
-  issuing a replacement token, so concurrent requests cannot rotate one
-  active token twice.
-- Knowledge document creation persists a `PENDING` row before enqueueing an
-  `ingest-document` BullMQ job with a deterministic document-based job ID.
-- Python ingestion uses paragraph-aware bounded chunks. Provider-backed
-  1536-dimensional embeddings and pgvector writes are implemented with a
-  conservative degraded path when provider configuration is unavailable.
-- The frontend operations dashboard supports login, customer ticket creation
-  and history, agent/admin queue operations, assignment, status changes,
-  notifications, and analytics summaries.
-- The live local frontend is currently served at `http://localhost:8080` when
-  run directly with Vite; Compose still uses port `5173`.
-
-## Workspace trap
-
-There have been two similarly named workspace copies. Docker must be started
-from the same checkout that contains the current edits. Confirm the mounted
-source with:
-
-```powershell
-docker exec asp-backend sed -n '1,30p' /app/src/routes/index.ts
-```
-
-It must show `authRouter` and `router.use('/auth', authRouter)`.
+- Refresh tokens are stored as SHA-256 hashes; rotation uses a conditional
+  revoke so concurrent requests cannot rotate one token twice.
+- Registration never accepts a role and creates CUSTOMER accounts.
+- Access-token roles are stateless and can remain stale until expiry.
+- Knowledge document creation persists PENDING before enqueueing ingestion with
+  a deterministic job ID and writes a submission audit. If initial enqueue fails,
+  the document is marked `FAILED` only while it is still `PENDING` at ingestion
+  attempt `0`, and the failure audit is written only when that conditional state
+  update applies.
+- Retrieval requires `status = READY AND moderationStatus = APPROVED`.
+  Moderation is Node-owned and uses `moderationVersion`; approval requires ready
+  ingestion, reject requires a reason, archive removes retrieval access, and
+  restore returns to review.
+- Retry is only valid from `FAILED`; Node checks BullMQ state, claims the
+  document, increments `ingestionAttempt`, enqueues a unique retry job, and
+  restores `FAILED` on enqueue failure. Python never writes moderation/audit.
+- Ticket assignment and status transitions lock the ticket row, treat duplicate
+  same-target requests as no-ops, and serialize competing changes. Concurrent
+  different-agent assignments and competing status changes produce contiguous
+  audit chains; forced audit failures roll back assignment, ticket, and
+  conversation state.
+- Express 5 makes `req.query` a getter. `validateQuery` replaces it with
+  `Object.defineProperty`; do not mutate it directly.
+- Audit metadata is allowlisted and scalar/type-validated. Content, credentials,
+  and tokens must never be added to audit metadata.
+- Admin date filters keep draft inputs separate from applied ranges: audit dates
+  apply via Apply dates/Clear dates, analytics presets apply immediately, and
+  analytics Apply re-applies the draft range (including a reload when unchanged).
+- Escalation is Node-owned. `ensureEscalation` creates one ticket and, when
+  requested, one SYSTEM handoff message. Repeated handoffs do not duplicate
+  either. The degraded and AI-escalation paths add the handoff message; manual
+  handoff does too; state-only escalation does not.
+- The refresh cookie path is `/api/auth`.
+- Docker and local development must not both bind the same host port.
 
 ## Validation status
 
-- Backend: 37 tests, build, and lint pass.
-- AI service: 9 tests pass.
-- Frontend: build and lint pass.
-- Live customer API flow passes login, conversation creation, ticket creation,
-  and ticket listing.
-- Playwright Chromium installation is currently blocked by external download
-  timeouts, so browser E2E execution remains pending.
+- Backend: 70 Vitest tests, TypeScript build, and ESLint pass.
+- Backend integration: 11 DB-backed tests pass against the isolated E2E
+  PostgreSQL.
+- AI service: 15 pytest tests pass, 1 opt-in DB test is skipped in the default
+  run; the DB-backed retrieval test passed separately. Ruff passes.
+- Frontend: TypeScript/Vite build and ESLint pass.
+- E2E: the latest 37 Playwright tests pass with 4 workers after the audit fixes.
+  Earlier repeatability evidence from before those fixes was 74/74 with
+  `--repeat-each=2`; that run does not cover the subsequent fixes.
+- Migration: all migrations apply cleanly to a fresh database; the moderation
+  migration applies over a legacy READY document, preserving content and setting
+  moderation defaults.
+- The two bounded follow-up tasks (initial enqueue-failure guard and ticket
+  transaction integration tests) passed Astra audit. This is not full-phase
+  independent audit approval.
+- Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1:
+  frontend, backend, backend integration, AI service, and E2E. Deployment has
+  not completed.
+- Remaining hardening: hosted deployment secrets, external tracing, durable cost
+  aggregation, and optional abandoned-ingestion reconciliation.

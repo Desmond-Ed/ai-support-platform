@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AnalyticsOverview, type Notification, type Ticket } from './services/api';
 import { createSocket } from './services/socket';
+import { CustomerChat } from './components/CustomerChat';
+import { OperationsDashboard } from './components/admin/OperationsDashboard';
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('accessToken') || '');
@@ -17,6 +19,7 @@ function App() {
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Ticket['priority']>('MEDIUM');
   const [isCreatingTicket, setIsCreatingTicket] = useState(false);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -36,6 +39,12 @@ function App() {
     }
 
     const socket = createSocket(token);
+    socket.on('connect', () => {
+      if (active) setIsSocketConnected(true);
+    });
+    socket.on('disconnect', () => {
+      if (active) setIsSocketConnected(false);
+    });
     socket.on('notification', (event) => {
       setNotifications((current) => [
         {
@@ -51,6 +60,7 @@ function App() {
 
     return () => {
       active = false;
+      setIsSocketConnected(false);
       socket.disconnect();
     };
   }, [token, role]);
@@ -76,7 +86,12 @@ function App() {
     }
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await api.logout();
+    } catch {
+      // The local session is still cleared so a network failure cannot trap the user.
+    }
     localStorage.removeItem('accessToken');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userId');
@@ -86,6 +101,7 @@ function App() {
     setOverview(null);
     setNotifications([]);
     setTickets([]);
+    setIsSocketConnected(false);
   }
 
   async function markAllRead() {
@@ -134,7 +150,13 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <main
+      data-testid="app-shell"
+      data-authenticated={token ? 'true' : 'false'}
+      data-role={role || 'anonymous'}
+      data-socket-connected={isSocketConnected ? 'true' : 'false'}
+      className={`min-h-screen px-6 py-10 ${role === 'CUSTOMER' ? 'bg-ground text-ink' : 'bg-slate-950 text-slate-100'}`}
+    >
       <div className="mx-auto max-w-6xl">
         <header className="mb-8 flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -175,6 +197,7 @@ function App() {
         {error && <p className="mb-6 rounded-lg border border-rose-400/40 bg-rose-400/10 p-4 text-rose-200">{error}</p>}
         {!token && <p className="mb-6 text-slate-400">Sign in to load live operations data.</p>}
         {token && role === 'CUSTOMER' && <p className="mb-6 text-slate-400">Signed in as a customer. Notifications are available; operations analytics require an agent account.</p>}
+        {token && role === 'CUSTOMER' && <CustomerChat token={token} />}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Metric label="Conversations" value={overview?.conversations ?? '-'} />
@@ -206,7 +229,12 @@ function App() {
             <div className="space-y-3">
               {tickets.length === 0 && <p className="text-sm text-slate-500">No tickets yet.</p>}
               {tickets.map((ticket) => (
-                <article className="rounded-lg border border-slate-800 bg-slate-950/60 p-4" key={ticket.id}>
+                <article
+                  data-testid="ticket-card"
+                  data-ticket-id={ticket.id}
+                  className="rounded-lg border border-slate-800 bg-slate-950/60 p-4"
+                  key={ticket.id}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-medium">{ticket.subject}</h3><p className="mt-1 text-sm text-slate-400">{ticket.description || 'No description provided.'}</p></div><span className="rounded-full border border-cyan-400/40 px-2 py-1 text-xs text-cyan-200">{ticket.priority}</span></div>
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500"><span>Created {new Date(ticket.createdAt).toLocaleString()}</span><span className="text-slate-700">|</span><span>{ticket.status.replace('_', ' ')}</span>{role !== 'CUSTOMER' && <><button className="ml-auto rounded border border-slate-700 px-2 py-1 text-slate-300 hover:border-cyan-400" onClick={() => assignToMe(ticket.id)}>Assign to me</button><select className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300" value={ticket.status} onChange={(event) => updateStatus(ticket.id, event.target.value as Ticket['status'])}>{(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((item) => <option key={item}>{item}</option>)}</select></>}</div>
                 </article>
@@ -216,11 +244,23 @@ function App() {
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
             <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">Notifications</h2><button className="text-sm text-cyan-300 hover:text-cyan-200" onClick={markAllRead} disabled={!token}>Mark all read</button></div>
-            <div className="space-y-3">{notifications.length === 0 && <p className="text-sm text-slate-500">No notifications yet.</p>}{notifications.slice(0, 8).map((notification) => <article className={`border-l-2 px-3 py-2 ${notification.read ? 'border-slate-700' : 'border-cyan-300'}`} key={notification.id}><p className="text-sm">{notification.payload.message || notification.type}</p><p className="mt-1 text-xs text-slate-500">{new Date(notification.createdAt).toLocaleString()}</p></article>)}</div>
+            <div className="space-y-3">{notifications.length === 0 && <p className="text-sm text-slate-500">No notifications yet.</p>}{notifications.slice(0, 8).map((notification) => <article
+              data-testid="notification"
+              data-notification-id={notification.id}
+              data-notification-type={notification.type}
+              data-resource-id={notification.payload.resourceId ?? ''}
+              data-read={notification.read ? 'true' : 'false'}
+              className={`border-l-2 px-3 py-2 ${notification.read ? 'border-slate-700' : 'border-cyan-300'}`}
+              key={notification.id}
+            ><p className="text-sm">{notification.payload.message || notification.type}</p><p className="mt-1 text-xs text-slate-500">{new Date(notification.createdAt).toLocaleString()}</p></article>)}</div>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5"><h2 className="text-lg font-semibold">Ticket analytics</h2><div className="mt-4 space-y-3">{overview?.ticketsByStatus.map((item) => <div className="flex items-center justify-between text-sm" key={item.status}><span className="text-slate-400">{item.status.replace('_', ' ')}</span><span className="font-semibold">{item._count._all}</span></div>) || <p className="text-sm text-slate-500">Analytics appear for agents and admins.</p>}</div></div>
         </section>
+
+        {token && (role === 'ADMIN' || role === 'AGENT') && (
+          <OperationsDashboard role={role} token={token} />
+        )}
       </div>
     </main>
   );

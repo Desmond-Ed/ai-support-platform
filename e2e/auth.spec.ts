@@ -1,67 +1,116 @@
 import { expect, test } from '@playwright/test';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-
-const TEST_CUSTOMER = { email: 'customer@example.com', password: 'DevPassword123!' };
-const TEST_AGENT = { email: 'agent@example.com', password: 'DevPassword123!' };
-const TEST_ADMIN = { email: 'admin@example.com', password: 'DevPassword123!' };
-
-async function login(page: any, credentials: { email: string; password: string }) {
-  await page.goto(FRONTEND_URL);
-  await page.fill('input[aria-label="Email"]', credentials.email);
-  await page.fill('input[aria-label="Password"]', credentials.password);
-  await page.click('button[type="submit"]');
-  await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
-  await page.waitForTimeout(1000);
-}
-
-async function logout(page: any) {
-  await page.click('button:has-text("Sign out")');
-  await expect(page.locator('form')).toBeVisible();
-}
+import { BACKEND_URL, SEEDED_USERS } from './support/config';
+import { apiLogin } from './support/api';
+import {
+  expectSignedOut,
+  login,
+  loginSeeded,
+  logout,
+  reloadWithSession,
+} from './support/fixtures';
 
 test.describe('Authentication', () => {
-  test('customer can login and sees customer dashboard', async ({ page }) => {
-    await login(page, TEST_CUSTOMER);
-    await expect(page.locator('text=Create a support ticket')).toBeVisible();
-    await expect(page.locator('text=Your tickets')).toBeVisible();
-    await expect(page.locator('text=Signed in as a customer')).toBeVisible();
+  test('customer login reaches the customer dashboard and chat', async ({ page }) => {
+    await loginSeeded(page, 'CUSTOMER');
+    await expect(page.getByText('Create a support ticket')).toBeVisible();
+    await expect(page.getByText('Your tickets')).toBeVisible();
+    await expect(page.getByTestId('customer-chat')).toBeVisible();
   });
 
-  test('agent can login and sees agent dashboard with analytics', async ({ page }) => {
-    await login(page, TEST_AGENT);
-    await expect(page.locator('text=Assigned ticket queue')).toBeVisible();
-    await expect(page.locator('text=Ticket analytics')).toBeVisible();
-    await expect(page.locator('text=Conversations')).toBeVisible();
+  test('agent login reaches the assigned queue and analytics', async ({ page }) => {
+    await loginSeeded(page, 'AGENT');
+    await expect(page.getByText('Assigned ticket queue', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ticket analytics', { exact: true })).toBeVisible();
   });
 
-  test('admin can login and sees admin dashboard', async ({ page }) => {
-    await login(page, TEST_ADMIN);
-    await expect(page.locator('text=Assigned ticket queue')).toBeVisible();
-    await expect(page.locator('text=Ticket analytics')).toBeVisible();
+  test('admin login reaches the operations dashboard', async ({ page }) => {
+    await loginSeeded(page, 'ADMIN');
+    await expect(page.getByText('Assigned ticket queue', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ticket analytics', { exact: true })).toBeVisible();
   });
 
-  test('login fails with wrong password', async ({ page }) => {
-    await page.goto(FRONTEND_URL);
-    await page.fill('input[aria-label="Email"]', TEST_CUSTOMER.email);
-    await page.fill('input[aria-label="Password"]', 'wrongpassword');
-    await page.click('button[type="submit"]');
-    await expect(page.locator('text=Invalid email or password')).toBeVisible();
+  test('login fails with an incorrect password', async ({ page }) => {
+    await page.goto('/');
+    const loginResponse = page.waitForResponse((response) =>
+      response.url().endsWith('/api/auth/login'),
+    );
+    await page.getByLabel('Email').fill(SEEDED_USERS.CUSTOMER.email);
+    await page.getByLabel('Password').fill('wrong-password');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+
+    expect((await loginResponse).status()).toBe(401);
+    await expect(page.getByText('Invalid email or password')).toBeVisible();
+    await expectSignedOut(page);
   });
 
-  test('login fails with unregistered email', async ({ page }) => {
-    await page.goto(FRONTEND_URL);
-    await page.fill('input[aria-label="Email"]', 'nonexistent@example.com');
-    await page.fill('input[aria-label="Password"]', 'DevPassword123!');
-    await page.click('button[type="submit"]');
-    await expect(page.locator('text=Invalid email or password')).toBeVisible();
+  test('login fails for an unregistered email', async ({ page }) => {
+    await page.goto('/');
+    const loginResponse = page.waitForResponse((response) =>
+      response.url().endsWith('/api/auth/login'),
+    );
+    await page.getByLabel('Email').fill(`missing-${Date.now()}@example.com`);
+    await page.getByLabel('Password').fill(SEEDED_USERS.CUSTOMER.password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+
+    expect((await loginResponse).status()).toBe(401);
+    await expect(page.getByText('Invalid email or password')).toBeVisible();
   });
 
-  test('logout clears session', async ({ page }) => {
-    await login(page, TEST_CUSTOMER);
+  test('a confirmed customer session survives a page reload', async ({ page, request }) => {
+    await loginSeeded(page, 'CUSTOMER');
+    const tokenBeforeReload = await page.evaluate(() => localStorage.getItem('accessToken'));
+
+    await reloadWithSession(page, 'CUSTOMER');
+
+    const tokenAfterReload = await page.evaluate(() => localStorage.getItem('accessToken'));
+    expect(tokenAfterReload).toBe(tokenBeforeReload);
+    await expect(page.getByText('Create a support ticket')).toBeVisible();
+    await expect(page.getByTestId('customer-chat')).toBeVisible();
+
+    const me = await request.get(`${BACKEND_URL}/api/users/me`, {
+      headers: { Authorization: `Bearer ${tokenAfterReload}` },
+    });
+    expect(me.status()).toBe(200);
+  });
+
+  test('sign out calls the logout API and clears the local session', async ({ page }) => {
+    await loginSeeded(page, 'CUSTOMER');
     await logout(page);
-    await expect(page.locator('form')).toBeVisible();
-    await expect(page.locator('text=Sign in to load live operations data')).toBeVisible();
+    await expect(page.getByText('Sign in to load live operations data')).toBeVisible();
+  });
+
+  test('server rejects customer access to agent and admin operations', async ({ request }) => {
+    const customer = await apiLogin(request, SEEDED_USERS.CUSTOMER);
+
+    const agentQueue = await request.get(`${BACKEND_URL}/api/tickets/agent`, {
+      headers: { Authorization: `Bearer ${customer.accessToken}` },
+    });
+    expect(agentQueue.status()).toBe(403);
+
+    const analytics = await request.get(`${BACKEND_URL}/api/analytics/overview`, {
+      headers: { Authorization: `Bearer ${customer.accessToken}` },
+    });
+    expect(analytics.status()).toBe(403);
+
+    const adminUsers = await request.get(`${BACKEND_URL}/api/admin/users`, {
+      headers: { Authorization: `Bearer ${customer.accessToken}` },
+    });
+    expect(adminUsers.status()).toBe(403);
+
+    const unauthenticated = await request.get(`${BACKEND_URL}/api/users/me`);
+    expect(unauthenticated.status()).toBe(401);
+  });
+
+  test('server rejects agent access to admin operations', async ({ request }) => {
+    const agent = await apiLogin(request, SEEDED_USERS.AGENT);
+    const adminUsers = await request.get(`${BACKEND_URL}/api/admin/users`, {
+      headers: { Authorization: `Bearer ${agent.accessToken}` },
+    });
+    expect(adminUsers.status()).toBe(403);
+
+    const analytics = await request.get(`${BACKEND_URL}/api/analytics/overview`, {
+      headers: { Authorization: `Bearer ${agent.accessToken}` },
+    });
+    expect(analytics.status()).toBe(200);
   });
 });

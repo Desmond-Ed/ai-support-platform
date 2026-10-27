@@ -18,7 +18,7 @@
 
 generator client {
   provider        = "prisma-client-js"
-  output	  = "../src/generated/prisma"
+  output          = "../src/generated/prisma"
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -71,6 +71,16 @@ enum KnowledgeDocumentStatus {
   FAILED
 }
 
+// Moderation is deliberately separate from ingestion. Python owns ingestion
+// status/chunks/embeddings; Node owns this moderation lifecycle and all audit
+// records. Retrieval requires both READY ingestion and APPROVED moderation.
+enum KnowledgeModerationStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
 enum AgentStatus {
   AVAILABLE
   BUSY
@@ -112,7 +122,8 @@ model User {
   feedback                ConversationFeedback[]
   auditLogs               AuditLog[]
   refreshTokens           RefreshToken[]
-  uploadedDocuments       KnowledgeDocument[]
+  uploadedDocuments       KnowledgeDocument[]    @relation("KnowledgeUploader")
+  moderatedDocuments      KnowledgeDocument[]    @relation("KnowledgeModerator")
 
   @@index([role])
   @@map("users")
@@ -207,6 +218,7 @@ model Ticket {
   @@index([status])
   @@index([priority])
   @@index([createdAt]) // ticket volume chart
+  @@index([resolvedAt]) // resolution time-series filter
   @@map("tickets")
 }
 
@@ -278,6 +290,7 @@ model AuditLog {
   @@index([userId])
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([action, createdAt])
   @@map("audit_logs")
 }
 
@@ -289,12 +302,20 @@ model KnowledgeDocument {
   content      String                  @db.Text // raw source text captured for chunking + embedding
   status       KnowledgeDocumentStatus @default(PENDING)
   uploadedById String
-  uploadedBy   User                    @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  uploadedBy   User                    @relation("KnowledgeUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
   sourceType   String // "UPLOAD" | "URL" | "MANUAL" — kept as String not enum;
   // the AI service (Python, no shared Prisma enum type) also writes this
   // field, so a loose String avoids cross-language enum drift. Validated
   // by Zod on the Node write path and by Pydantic on the Python write path.
   errorMessage String?                 @db.Text // populated by the worker if status = FAILED
+
+  moderationStatus  KnowledgeModerationStatus @default(PENDING_REVIEW)
+  moderationReason  String?                   @db.Text
+  moderatedById     String?
+  moderatedBy       User?                     @relation("KnowledgeModerator", fields: [moderatedById], references: [id], onDelete: SetNull)
+  moderatedAt       DateTime?                 @db.Timestamptz
+  moderationVersion Int                       @default(0)
+  ingestionAttempt  Int                       @default(0)
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -302,6 +323,8 @@ model KnowledgeDocument {
   chunks KnowledgeChunk[]
 
   @@index([status])
+  @@index([moderationStatus])
+  @@index([moderatedById])
   @@map("knowledge_documents")
 }
 

@@ -1,78 +1,60 @@
 import { expect, test } from '@playwright/test';
+import { AI_SERVICE_URL, BACKEND_URL } from './support/config';
+import { apiRegisterCustomer, type Ticket } from './support/api';
+import {
+  createTicketViaUi,
+  login,
+  reloadWithSession,
+  ticketCard,
+} from './support/fixtures';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
-
-const TEST_CUSTOMER = { email: 'customer@example.com', password: 'DevPassword123!' };
-const TEST_AGENT = { email: 'agent@example.com', password: 'DevPassword123!' };
-
-async function login(page: any, credentials: { email: string; password: string }) {
-  await page.goto(FRONTEND_URL);
-  await page.fill('input[aria-label="Email"]', credentials.email);
-  await page.fill('input[aria-label="Password"]', credentials.password);
-  await page.click('button[type="submit"]');
-  await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
-  await page.waitForTimeout(1000);
-}
-
-test.describe('API health checks', () => {
+test.describe('Service health', () => {
   test('backend health endpoint responds', async ({ request }) => {
     const response = await request.get(`${BACKEND_URL}/api/health`);
     expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body).toHaveProperty('status', 'ok');
+    expect(await response.json()).toHaveProperty('status', 'ok');
   });
 
-  test('frontend loads', async ({ page }) => {
-    await page.goto(FRONTEND_URL);
-    await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
-  });
-
-  test('AI service health', async ({ request }) => {
-    const response = await request.get('http://localhost:8000/api/health');
+  test('AI service health endpoint responds', async ({ request }) => {
+    const response = await request.get(`${AI_SERVICE_URL}/api/health`);
     expect(response.ok()).toBeTruthy();
   });
-});
 
-test.describe('Conversation flow', () => {
-  test('customer can start conversation and AI responds', async ({ page }) => {
-    await login(page, TEST_CUSTOMER);
-    const subject = `E2E ${Date.now()} How do I reset my password?`;
-    await page.fill('input[placeholder="What do you need help with?"]', subject);
-    await page.click('button:has-text("Create ticket")');
-    await page.waitForTimeout(3000);
-    const card = page.getByRole('article').filter({
-      has: page.getByRole('heading', { name: subject, exact: true }),
-    });
-    await expect(card.getByRole('heading', { name: subject, exact: true })).toBeVisible({ timeout: 10000 });
-  });
-});
-
-test.describe('Ticket priorities', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page, TEST_CUSTOMER);
-  });
-
-  ['LOW', 'MEDIUM', 'HIGH', 'URGENT'].forEach((priority) => {
-    test(`customer can create ${priority} priority ticket`, async ({ page }) => {
-      const subject = `E2E ${priority} ${Date.now()}`;
-      await page.fill('input[placeholder="What do you need help with?"]', subject);
-      await page.selectOption('select', priority);
-      await page.click('button:has-text("Create ticket")');
-      const card = page.getByRole('article').filter({
-        has: page.getByRole('heading', { name: subject, exact: true }),
-      });
-      await expect(card.getByRole('heading', { name: subject, exact: true })).toBeVisible({ timeout: 10000 });
-      await expect(card.getByText(priority, { exact: true })).toBeVisible({ timeout: 5000 });
-    });
-  });
-});
-
-test.describe('Session persistence', () => {
-  test('session persists across page reloads', async ({ page }) => {
-    await login(page, TEST_CUSTOMER);
-    await page.reload();
+  test('frontend loads the command center', async ({ page }) => {
+    await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
-    await expect(page.locator('text=Create a support ticket')).toBeVisible();
   });
+});
+
+test.describe('Customer ticket creation', () => {
+  test('customer creates a ticket that persists after reload', async ({ page, request }) => {
+    const { credentials } = await apiRegisterCustomer(request, 'ticket-persist');
+    await login(page, credentials, 'CUSTOMER');
+
+    const subject = `E2E persistence ${Date.now()}`;
+    const ticket = await createTicketViaUi(page, subject, 'HIGH');
+    await expect(ticketCard(page, ticket.id).getByText('HIGH', { exact: true })).toBeVisible();
+
+    await reloadWithSession(page, 'CUSTOMER');
+    const restored = ticketCard(page, ticket.id);
+    await expect(restored.getByRole('heading', { name: subject, exact: true })).toBeVisible();
+    await expect(restored.getByText('HIGH', { exact: true })).toBeVisible();
+  });
+
+  const priorities: Array<Ticket['priority']> = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+  for (const priority of priorities) {
+    test(`customer creates a ${priority} priority ticket`, async ({ page, request }) => {
+      const { credentials } = await apiRegisterCustomer(request, `ticket-${priority.toLowerCase()}`);
+      await login(page, credentials, 'CUSTOMER');
+
+      const subject = `E2E ${priority} ${Date.now()}`;
+      const ticket = await createTicketViaUi(page, subject, priority);
+      const card = ticketCard(page, ticket.id);
+
+      await expect(card.getByRole('heading', { name: subject, exact: true })).toBeVisible();
+      await expect(card.getByText(priority, { exact: true })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Assign to me' })).toHaveCount(0);
+      await expect(card.locator('select')).toHaveCount(0);
+    });
+  }
 });

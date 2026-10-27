@@ -5,9 +5,11 @@ The full Prisma schema, migrations, generated client, and Docker PostgreSQL
 environment are present. Authentication has been exercised against the running
 database: users and hashed refresh-token rows are created, refresh tokens
 rotate, and logout revokes the current token. Conversations, messages, tickets,
-assignments, notifications, knowledge documents, and analytics-backed entities
-now have implemented API workflows. Knowledge chunks and embeddings are written
-by the Python ingestion path as documented below.
+assignments, notifications, knowledge documents, moderation/audit state, and
+analytics-backed entities now have implemented API workflows. Knowledge chunks
+and embeddings are written by the Python ingestion path as documented below.
+The moderation migration has been verified both on a clean database and as a
+forward upgrade over existing document rows.
 
 ## Entity list vs. spec (§4)
 
@@ -40,15 +42,20 @@ implementing (not changing) the approved architecture:
 
 - **Node/Prisma writes**: `User`, `RefreshToken`, `Conversation`,
   `Message`, `Ticket`, `TicketAssignment`, `AgentAvailability`,
-  `Notification`, `ConversationFeedback`, `AuditLog`. This is
-  "application state" per the ownership rule — Python never writes these.
-- **Python writes directly** (via psycopg, not this Prisma client —
+  `Notification`, `ConversationFeedback`, and `AuditLog`. This is
+  "application state" per the ownership rule - Python never writes these.
+- **Python writes directly** (via psycopg, not this Prisma client -
   Prisma Client is TS-only): `KnowledgeChunk`, `Embedding`, and
   `KnowledgeDocument.status`/`errorMessage` during ingestion. Node still
   *creates* the initial `KnowledgeDocument` row (status `PENDING`) and
-  enqueues the BullMQ job — Python only writes once it's actually
-  processing. This exactly matches the spec's §12 ingestion workflow.
-  See `docs/ai.md` for the full reasoning.
+  enqueues the BullMQ job - Python only writes once it is actually
+  processing. This matches the established ingestion workflow. See
+  `docs/ai.md` for the full reasoning.
+- **Moderation and audit are Node-owned**: Python must not write
+  `moderationStatus`, moderation metadata, ingestion attempts, retry state,
+  tickets, notifications, or audit rows. Node bumps `moderationVersion`,
+  transitions moderation state, and writes the matching audit in one
+  transaction. Ingestion retry is claimed by Node before enqueueing.
 
 ## pgvector
 
@@ -65,10 +72,42 @@ native vector type, so:
 
 ## Indexes
 
-Added on every foreign key, plus a few analytics-driven ones called out
-in the schema comments: `Conversation.createdAt` (daily/weekly charts),
-`Ticket.createdAt` (ticket volume), `ConversationFeedback.rating`
-(satisfaction chart), `Notification(userId, read)` (unread count queries).
+Added on every foreign key, plus analytics/operations-driven indexes:
+
+- `Conversation.createdAt` for daily/weekly charts.
+- `Ticket.createdAt` for ticket volume and `Ticket.resolvedAt` for resolution
+  time-series queries.
+- `ConversationFeedback.rating` for the satisfaction chart.
+- `Notification(userId, read)` for unread counts.
+- `KnowledgeDocument.moderationStatus` and `moderatedById` for the moderation
+  queue/detail paths.
+- `AuditLog(action, createdAt)` for filtered, newest-first audit history.
+
+## Knowledge moderation and ingestion retry
+
+`KnowledgeDocument` stores immutable content plus:
+
+- `moderationStatus`: `PENDING_REVIEW`, `APPROVED`, `REJECTED`, or `ARCHIVED`.
+- `moderationReason`, `moderatedById`, and `moderatedAt`.
+- `moderationVersion`: optimistic concurrency token incremented on every
+  successful moderation transition.
+- `ingestionAttempt`: incremented when Node claims a retry.
+
+Only documents that are both ingestion `READY` and moderation `APPROVED` are
+retrievable. Approval is rejected while ingestion is not ready. Retry is only
+valid from `FAILED`; the retry job ID is
+`knowledge-document-<id>-retry-<attempt>`.
+
+The forward migration is
+`backend/prisma/migrations/20261026180000_add_knowledge_moderation/`. A clean
+database and an existing pre-migration document were both verified: legacy rows
+are preserved with `PENDING_REVIEW`, version `0`, and attempt `0`.
+
+Legacy rows are deliberately not auto-approved during migration. After rollout,
+an admin must review each `PENDING_REVIEW` document in the moderation queue and
+approve only rows whose ingestion status is `READY`; rejected or obsolete rows
+should be rejected or archived. This keeps previously stored content out of
+retrieval until an explicit moderation decision is audited.
 
 ## Cascade behavior
 
@@ -86,14 +125,22 @@ in the schema comments: `Conversation.createdAt` (daily/weekly charts),
 
 Run the following from `backend` after schema changes:
 
-```bash
-cd backend
-npx prisma format      # auto-fixes styling, will error on real syntax problems
-npx prisma validate    # schema-level validation
-npx prisma migrate dev --name init_phase2_schema
+```powershell
+npx prisma format
+npx prisma validate
+npx prisma migrate dev --name <descriptive_name>
 npx prisma generate
+npm test
+npm run test:integration
 ```
 
-The committed initial migration is under
-`backend/prisma/migrations/20260921143341_init_phase2_schema/`. Do not edit a
+Committed migrations:
+
+- `20260921143341_init_phase2_schema`
+- `20260923155514_add_knowledge_document_content`
+- `20261026180000_add_knowledge_moderation`
+
+`npm run test:integration` uses the isolated E2E PostgreSQL by default
+(`postgresql://postgres:postgres@localhost:5433/ai_support_platform_e2e`) or
+`TEST_DATABASE_URL` when provided. It is not a mock suite. Do not edit a
 generated client by hand; regenerate it from the schema.

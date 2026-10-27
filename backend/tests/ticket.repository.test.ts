@@ -1,46 +1,78 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const transactionClient = vi.hoisted(() => ({
-  ticketAssignment: { create: vi.fn(), updateMany: vi.fn() },
-  conversation: {
-    findUniqueOrThrow: vi.fn(),
+const db = vi.hoisted(() => ({
+  ticketAssignment: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  ticket: {
     update: vi.fn(),
   },
 }));
 
-const prisma = vi.hoisted(() => ({ $transaction: vi.fn() }));
-
-vi.mock('../src/config/db.js', () => ({ prisma }));
+vi.mock('../src/config/db.js', () => ({ prisma: db }));
 
 import { TicketRepository } from '../src/repositories/TicketRepository.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
-  prisma.$transaction.mockImplementation((callback) => callback(transactionClient));
-  transactionClient.ticketAssignment.create.mockResolvedValue({
+  db.ticketAssignment.findFirst.mockResolvedValue({
     id: 'assignment-1',
     ticketId: 'ticket-1',
     agentId: 'agent-1',
   });
-  transactionClient.conversation.findUniqueOrThrow.mockResolvedValue({ status: 'ESCALATED' });
+  db.ticketAssignment.create.mockResolvedValue({
+    id: 'assignment-1',
+    ticketId: 'ticket-1',
+    agentId: 'agent-1',
+  });
+  db.ticketAssignment.updateMany.mockResolvedValue({ count: 1 });
+  db.ticket.update.mockResolvedValue({ id: 'ticket-1', status: 'IN_PROGRESS', resolvedAt: null });
 });
 
 describe('TicketRepository', () => {
-  it('assigns a ticket and transitions its escalated conversation in one transaction', async () => {
-    const result = await TicketRepository.assignAgent('ticket-1', 'agent-1', 'conversation-1');
+  it('finds the active assignment for a ticket', async () => {
+    const result = await TicketRepository.findActiveAssignment('ticket-1');
 
     expect(result).toMatchObject({ ticketId: 'ticket-1', agentId: 'agent-1' });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(transactionClient.ticketAssignment.updateMany).toHaveBeenCalledWith({
+    expect(db.ticketAssignment.findFirst).toHaveBeenCalledWith({
       where: { ticketId: 'ticket-1', unassignedAt: null },
-      data: { unassignedAt: expect.any(Date) },
+      orderBy: { assignedAt: 'desc' },
     });
-    expect(transactionClient.ticketAssignment.create).toHaveBeenCalledWith({
+  });
+
+  it('closes the active assignment and creates the replacement', async () => {
+    const unassignedAt = new Date();
+    const unassigned = await TicketRepository.unassignActive('ticket-1', unassignedAt);
+    const result = await TicketRepository.createAssignment('ticket-1', 'agent-1');
+
+    expect(unassigned).toBe(1);
+    expect(db.ticketAssignment.updateMany).toHaveBeenCalledWith({
+      where: { ticketId: 'ticket-1', unassignedAt: null },
+      data: { unassignedAt },
+    });
+    expect(result).toMatchObject({ ticketId: 'ticket-1', agentId: 'agent-1' });
+    expect(db.ticketAssignment.create).toHaveBeenCalledWith({
       data: { ticketId: 'ticket-1', agentId: 'agent-1' },
     });
-    expect(transactionClient.conversation.update).toHaveBeenCalledWith({
-      where: { id: 'conversation-1' },
-      data: { agentId: 'agent-1', status: 'WITH_AGENT' },
+  });
+
+  it('clears resolvedAt only when a ticket is reopened', async () => {
+    await TicketRepository.updateStatus('ticket-1', 'IN_PROGRESS');
+
+    expect(db.ticket.update).toHaveBeenCalledWith({
+      where: { id: 'ticket-1' },
+      data: { status: 'IN_PROGRESS', resolvedAt: null },
+    });
+  });
+
+  it('does not clear resolvedAt when moving a resolved ticket to closed', async () => {
+    await TicketRepository.updateStatus('ticket-1', 'CLOSED');
+
+    expect(db.ticket.update).toHaveBeenCalledWith({
+      where: { id: 'ticket-1' },
+      data: { status: 'CLOSED' },
     });
   });
 });

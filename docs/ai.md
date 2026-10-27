@@ -24,12 +24,17 @@ fact.
 
 ## Data ownership across the service boundary
 
-Node owns users, tickets, conversations, auth, and knowledge-document status.
-Python owns the derived `knowledge_chunks` and `embeddings` tables and writes
-them directly through SQL; sending thousands of vector values over HTTP would
-be wasteful. The trade-off is that two services write to one database, and
-Python's raw SQL must track Prisma's column names. Moving document-status
-updates to Node is a planned follow-up.
+Node owns users, tickets, conversations, auth, knowledge-document lifecycle,
+moderation, retry state, and audit logs. Python owns AI processing and the
+derived `knowledge_chunks` and `embeddings` tables and writes them directly
+through SQL; sending thousands of vector values over HTTP would be wasteful.
+Python may update only `KnowledgeDocument.status`/`errorMessage` during
+ingestion. It must not write moderation state, ingestion attempts, retry state,
+tickets, notifications, or audit rows.
+
+The trade-off is that two services write to one database, and Python's raw SQL
+must track Prisma's column names. Moving document-status updates to Node remains
+a possible follow-up.
 
 ## Phase 1 — Health check (sync)
 
@@ -86,6 +91,23 @@ updates to Node is a planned follow-up.
   query, versus the flexibility above. Revisit if Phase 7's retrieval
   latency numbers make that join a real cost.
 
+## Moderation publication invariant and retry
+
+- Retrieval joins `knowledge_chunks`, `knowledge_documents`, and `embeddings`
+  and filters with `kd.status = 'READY' AND kd."moderationStatus" = 'APPROVED'`.
+  Node enforces that approval is only possible after ingestion is `READY`.
+- Reject and archive immediately remove a document from retrieval because the
+  filter is evaluated at query time. Restore returns a document to review and
+  does not publish it.
+- Ingestion failure is persisted by Python as `status = FAILED` plus
+  `errorMessage`. Node owns retry: it validates the current state, checks the
+  BullMQ job, claims `FAILED -> PENDING`, increments `ingestionAttempt`, and
+  enqueues `knowledge-document-<id>-retry-<attempt>`.
+- If retry enqueueing fails, Node restores `FAILED` and records
+  `KNOWLEDGE_INGESTION_RETRY_ENQUEUE_FAILED`. A failed HTTP ingestion call is
+  retried by BullMQ with the original job ID, so it cannot double-create chunks
+  concurrently.
+
 ## Handoff and degraded behavior
 
 - **Why `/api/chat` is synchronous**: the customer is actively waiting for a
@@ -126,3 +148,16 @@ updates to Node is a planned follow-up.
   back to Node synchronously in the chat-reply response payload, or does
   it write to a shared metrics store Node reads from? Will record the
   tradeoff here when built.
+
+## Validation
+
+- Python unit coverage asserts the READY + APPROVED retrieval predicate and the
+  degraded empty-context path.
+- A database-backed pytest check inserts approved, pending, and failed document
+  rows with pgvector embeddings and asserts only the approved row is returned.
+  It is opt-in with `RUN_DB_INTEGRATION=1` and a `DATABASE_URL`; the local
+  isolated database run passed.
+- The deterministic E2E stub returns token-aware lexical embeddings so the
+  isolated stack exercises ranking rather than a single constant vector. Its
+  failure control targets a request with an exact input count, allowing the
+  retry workflow to fail ingestion without affecting concurrent chat.

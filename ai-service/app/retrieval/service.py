@@ -34,6 +34,7 @@ def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
                     JOIN knowledge_documents kd ON kd.id = kc."documentId"
                     JOIN embeddings e ON e."chunkId" = kc.id
                     WHERE kd.status = 'READY'
+                      AND kd."moderationStatus" = 'APPROVED'
                     ORDER BY similarity DESC, kc."chunkIndex" ASC
                     LIMIT %s
                     """,

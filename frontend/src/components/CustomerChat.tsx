@@ -64,6 +64,7 @@ export function CustomerChat({ token }: { token: string }) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isHandingOff, setIsHandingOff] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   const [error, setError] = useState('');
   const [degraded, setDegraded] = useState(false);
 
@@ -117,7 +118,12 @@ export function CustomerChat({ token }: { token: string }) {
 
     const subscribe = () => {
       client?.emit('subscribe', subscription, (acknowledgement) => {
-        if (active && !acknowledgement.ok) setError('Unable to subscribe to this conversation.');
+        if (!active) return;
+        if (!acknowledgement.ok) {
+          setError('Unable to subscribe to this conversation.');
+          return;
+        }
+        setIsSubscribed(true);
       });
     };
 
@@ -147,6 +153,7 @@ export function CustomerChat({ token }: { token: string }) {
 
     return () => {
       active = false;
+      setIsSubscribed(false);
       if (client) {
         client.off('conversation_message', receiveMessage);
         client.off('connect', onConnect);
@@ -224,7 +231,13 @@ export function CustomerChat({ token }: { token: string }) {
   }
 
   return (
-    <section aria-labelledby="customer-chat-heading" className="mb-8 rounded-xl border border-line bg-ground p-4 text-ink sm:p-5">
+    <section
+      data-testid="customer-chat"
+      data-loaded={isLoading ? 'false' : 'true'}
+      data-subscribed={isSubscribed ? 'true' : 'false'}
+      aria-labelledby="customer-chat-heading"
+      className="mb-8 rounded-xl border border-line bg-ground p-4 text-ink sm:p-5"
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
         <div>
           <p className="font-sans text-xs font-medium uppercase text-muted-ink">Support</p>

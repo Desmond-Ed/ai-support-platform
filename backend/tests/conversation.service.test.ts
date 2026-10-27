@@ -52,6 +52,13 @@ beforeEach(() => {
     subject: 'Conversation #conversa',
     status: 'OPEN',
   });
+  conversationRepository.createSystemMessage.mockResolvedValue({
+    id: 'system-message-1',
+    conversationId: 'conversation-1',
+    senderType: 'SYSTEM',
+    content: 'A support agent will follow up shortly.',
+    createdAt: new Date(),
+  });
 });
 
 describe('ConversationService', () => {
@@ -95,6 +102,11 @@ describe('ConversationService', () => {
 
     expect(result).toBe(conversation);
     expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledWith(
+      'conversation-1',
+      'A support agent will follow up shortly.',
+    );
     expect(notificationService.create).toHaveBeenCalledWith(
       'customer-1',
       'AI_HANDOFF',
@@ -130,6 +142,7 @@ describe('ConversationService', () => {
     await ConversationService.handoffForCustomer('conversation-1', 'customer-1', 'CUSTOMER');
 
     expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledTimes(1);
   });
 
   it('lists history for the customer who owns the conversation', async () => {
@@ -247,7 +260,13 @@ describe('ConversationService', () => {
   it('escalates to a human when the AI marks the reply as escalated', async () => {
     const customerMessage = { id: 'message-1', conversationId: 'conversation-1', senderType: 'CUSTOMER' };
     const assistantMessage = { id: 'message-2', conversationId: 'conversation-1', senderType: 'AI' };
-    const handoffMessage = { id: 'message-3', conversationId: 'conversation-1', senderType: 'SYSTEM' };
+    const handoffMessage = {
+      id: 'message-3',
+      conversationId: 'conversation-1',
+      senderType: 'SYSTEM',
+      content: 'A support agent will follow up shortly.',
+      createdAt: new Date(),
+    };
 
     conversationRepository.findByIdForCustomer.mockResolvedValue({
       id: 'conversation-1',
@@ -282,6 +301,10 @@ describe('ConversationService', () => {
         subject: expect.any(String),
       }),
     });
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledWith(
+      'conversation-1',
+      'A support agent will follow up shortly.',
+    );
     expect(notificationService.create).toHaveBeenCalledWith(
       'customer-1',
       'AI_HANDOFF',
@@ -319,7 +342,7 @@ describe('ConversationService', () => {
 
     expect(result.assistantMessage).toEqual(degradedMessage);
     expect(result.degraded).toBe(true);
-    expect(conversationRepository.createSystemMessage).toHaveBeenCalled();
+    expect(conversationRepository.createSystemMessage).toHaveBeenCalledTimes(1);
     expect(transactionClient.ticket.create).toHaveBeenCalledTimes(1);
   });
 

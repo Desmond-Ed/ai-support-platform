@@ -1,132 +1,95 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+import { SEEDED_USERS } from './support/config';
+import {
+  apiAssignTicket,
+  apiCreateAgent,
+  apiCreateConversation,
+  apiCreateTicket,
+  apiGetAgentTickets,
+  apiLogin,
+  apiRegisterCustomer,
+  type AuthSession,
+  type Ticket,
+} from './support/api';
+import { login, reloadWithSession, ticketCard } from './support/fixtures';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+type AssignedTicketSetup = {
+  agent: { credentials: { email: string; password: string }; session: AuthSession; id: string };
+  ticket: Ticket;
+};
 
-const TEST_CUSTOMER = { email: 'customer@example.com', password: 'DevPassword123!' };
-const TEST_AGENT = { email: 'agent@example.com', password: 'DevPassword123!' };
-
-async function login(page: any, credentials: { email: string; password: string }) {
-  await page.goto(FRONTEND_URL);
-  await page.fill('input[aria-label="Email"]', credentials.email);
-  await page.fill('input[aria-label="Password"]', credentials.password);
-  await page.click('button[type="submit"]');
-  await expect(page.getByRole('heading', { name: 'Command center' })).toBeVisible();
-  await page.waitForTimeout(1000);
+async function createAssignedTicket(
+  request: APIRequestContext,
+  prefix: string,
+): Promise<AssignedTicketSetup> {
+  const admin = await apiLogin(request, SEEDED_USERS.ADMIN);
+  const agent = await apiCreateAgent(request, admin, `${prefix}-agent`);
+  const { session: customerSession } = await apiRegisterCustomer(request, `${prefix}-customer`);
+  const conversation = await apiCreateConversation(request, customerSession.accessToken);
+  const ticket = await apiCreateTicket(
+    request,
+    customerSession.accessToken,
+    conversation.id,
+    `E2E ${prefix} ${Date.now()}`,
+  );
+  await apiAssignTicket(request, agent.session.accessToken, ticket.id, agent.id);
+  return { agent, ticket };
 }
 
-function ticketCard(page: any, subject: string) {
-  return page.getByRole('article').filter({
-    has: page.getByRole('heading', { name: subject, exact: true }),
-  });
-}
+test.describe('Agent ticket queue', () => {
+  test('agent assigns a ticket to themselves and the assignment survives reload', async ({
+    page,
+    request,
+  }) => {
+    const { agent, ticket } = await createAssignedTicket(request, 'assign');
+    await login(page, agent.credentials, 'AGENT');
 
-async function createTicketAssignedToAgent(page: any, browser: any, request: any): Promise<string> {
-  const { token, agentId } = await page.evaluate(() => ({
-    token: localStorage.getItem('accessToken'),
-    agentId: localStorage.getItem('userId'),
-  }));
-  if (!token || !agentId) throw new Error('Agent session is missing credentials');
-
-  const customerContext = await browser.newContext();
-  try {
-    const customerPage = await customerContext.newPage();
-    await login(customerPage, TEST_CUSTOMER);
-    const subject = `E2E ${Date.now()}`;
-    await customerPage.fill('input[placeholder="What do you need help with?"]', subject);
-    const ticketResponsePromise = customerPage.waitForResponse(
-      (response: any) => response.url().endsWith('/api/tickets') && response.request().method() === 'POST',
+    const card = ticketCard(page, ticket.id);
+    await expect(card).toBeVisible();
+    const assignmentResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().endsWith(`/api/tickets/${ticket.id}/assign`),
     );
-    await customerPage.click('button:has-text("Create ticket")');
-    const ticketResponse = await ticketResponsePromise;
-    const { ticket } = await ticketResponse.json();
-    const assignmentResponse = await request.patch(`${BACKEND_URL}/api/tickets/${ticket.id}/assign`, {
-      headers: { Authorization: `Bearer ${token}` },
-      data: { agentId },
-    });
-    if (!assignmentResponse.ok()) throw new Error('Unable to assign setup ticket to agent');
+    await card.getByRole('button', { name: 'Assign to me' }).click();
+    expect((await assignmentResponse).status()).toBe(200);
 
-    await page.reload();
-    await expect(ticketCard(page, subject)).toBeVisible({ timeout: 10000 });
-    return subject;
-  } finally {
-    await customerContext.close();
-  }
-}
+    const assigned = await apiGetAgentTickets(request, agent.session.accessToken);
+    expect(assigned.some((item) => item.id === ticket.id)).toBe(true);
 
-test.describe('Customer ticket flow', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page, TEST_CUSTOMER);
+    await reloadWithSession(page, 'AGENT');
+    await expect(ticketCard(page, ticket.id)).toBeVisible();
   });
 
-  test('customer can create a ticket', async ({ page }) => {
-    const subject = `E2E ${Date.now()}`;
-    await page.fill('input[placeholder="What do you need help with?"]', subject);
-    await page.fill('textarea[placeholder="Add details (optional)"]', 'This is a test ticket description');
-    await page.selectOption('select', 'HIGH');
-    await page.click('button:has-text("Create ticket")');
-    const card = ticketCard(page, subject);
-    await expect(card).toBeVisible({ timeout: 10000 });
-    await expect(card.getByText('HIGH', { exact: true })).toBeVisible();
-  });
+  test('agent status changes persist after reload', async ({ page, request }) => {
+    const { agent, ticket } = await createAssignedTicket(request, 'status');
+    await login(page, agent.credentials, 'AGENT');
 
-  test('customer sees their created tickets', async ({ page }) => {
-    await expect(page.locator('text=Your tickets')).toBeVisible();
-  });
+    const card = ticketCard(page, ticket.id);
+    const statusSelect = card.locator('select');
+    await expect(statusSelect).toHaveValue('OPEN');
 
-  test('customer cannot see assign to me or status dropdown', async ({ page }) => {
-    const subject = `E2E ${Date.now()}`;
-    await page.fill('input[placeholder="What do you need help with?"]', subject);
-    await page.click('button:has-text("Create ticket")');
-    const card = ticketCard(page, subject);
-    await expect(card).toBeVisible({ timeout: 10000 });
-    await expect(card.getByRole('button', { name: 'Assign to me' })).not.toBeVisible();
-    await expect(card.locator('select').filter({ hasText: 'OPEN' })).not.toBeVisible();
-  });
-});
-
-test.describe('Agent ticket management', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page, TEST_AGENT);
-  });
-
-  test('agent sees assigned ticket queue', async ({ page, browser, request }) => {
-    await createTicketAssignedToAgent(page, browser, request);
-    await expect(page.locator('text=Assigned ticket queue')).toBeVisible();
-  });
-
-  test('agent can assign ticket to themselves', async ({ page, browser, request }) => {
-    const subject = await createTicketAssignedToAgent(page, browser, request);
-    await expect(ticketCard(page, subject).getByRole('button', { name: 'Assign to me' })).toBeVisible();
-  });
-
-  test('agent can update ticket status', async ({ page, browser, request }) => {
-    const subject = await createTicketAssignedToAgent(page, browser, request);
-    await expect(ticketCard(page, subject).locator('select').filter({ hasText: 'OPEN' })).toBeVisible();
-  });
-
-  test('agent sees analytics', async ({ page }) => {
-    await expect(page.locator('text=Ticket analytics')).toBeVisible();
-    await expect(page.locator('text=Conversations')).toBeVisible();
-    await expect(page.locator('text=Resolved by AI')).toBeVisible();
-    await expect(page.locator('text=AI resolutions')).toBeVisible();
-  });
-});
-
-test.describe('Ticket status transitions', () => {
-  test('agent can transition ticket from OPEN to IN_PROGRESS to RESOLVED to CLOSED', async ({ page, browser, request }) => {
-    await login(page, TEST_AGENT);
-    const subject = await createTicketAssignedToAgent(page, browser, request);
-    const card = ticketCard(page, subject);
-    const statusSelect = card.locator('select').filter({ hasText: 'OPEN' }).first();
-    await expect(statusSelect).toBeVisible();
+    const inProgressResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().endsWith(`/api/tickets/${ticket.id}/status`),
+    );
     await statusSelect.selectOption('IN_PROGRESS');
+    expect((await inProgressResponse).status()).toBe(200);
     await expect(statusSelect).toHaveValue('IN_PROGRESS');
-    await statusSelect.selectOption('RESOLVED');
-    await expect(statusSelect).toHaveValue('RESOLVED');
-    await statusSelect.selectOption('CLOSED');
-    await expect(statusSelect).toHaveValue('CLOSED');
-    await page.reload();
-    await expect(ticketCard(page, subject).locator('select')).toHaveValue('CLOSED');
+
+    await reloadWithSession(page, 'AGENT');
+    await expect(ticketCard(page, ticket.id).locator('select')).toHaveValue('IN_PROGRESS');
+
+    const resolvedResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().endsWith(`/api/tickets/${ticket.id}/status`),
+    );
+    await ticketCard(page, ticket.id).locator('select').selectOption('RESOLVED');
+    expect((await resolvedResponse).status()).toBe(200);
+
+    await reloadWithSession(page, 'AGENT');
+    await expect(ticketCard(page, ticket.id).locator('select')).toHaveValue('RESOLVED');
   });
 });

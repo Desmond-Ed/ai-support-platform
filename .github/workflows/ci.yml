@@ -30,6 +30,11 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_support_platform
+      JWT_ACCESS_SECRET: ci-access-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,6 +46,41 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+
+  backend-integration:
+    name: Backend — database integration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_support_platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_support_platform_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_support_platform_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_support_platform_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - run: npm run test:integration
 
   ai-service:
     name: AI service — lint & import check
@@ -56,7 +96,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: ai-service/requirements.txt
       - run: pip install -r requirements.txt
-      - run: ruff check app
+      - run: ruff check .
       - run: python -m pytest -q
       - name: Import check (app boots without syntax/import errors)
         env:
@@ -64,6 +104,60 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: python -c "from app.main import app"
 
-  # Phase 12 adds: vitest (backend+frontend), pytest (ai-service),
-  # Playwright (e2e) as separate jobs once real test suites exist beyond
-  # the Phase 1 smoke tests.
+  e2e:
+    name: E2E — isolated stack, Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      FRONTEND_URL: http://localhost:5174
+      BACKEND_URL: http://localhost:4001
+      AI_SERVICE_URL: http://localhost:8001
+      E2E_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install E2E dependencies from lockfile
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Chromium with OS dependencies
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Start isolated E2E stack and wait for health
+        run: docker compose -f docker-compose.e2e.yml up -d --build --wait
+
+      - name: Apply committed migrations
+        run: docker compose -f docker-compose.e2e.yml exec -T backend npx prisma migrate deploy
+
+      - name: Seed dedicated E2E identities
+        run: docker compose -f docker-compose.e2e.yml exec -T backend npm run db:seed:e2e
+
+      - name: Run the complete deterministic E2E suite
+        working-directory: e2e
+        run: npm test
+
+      - name: Collect sanitized service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.e2e.yml logs --no-color > e2e/service-logs.txt
+
+      - name: Upload Playwright report, traces, and service logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-artifacts
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            e2e/service-logs.txt
+          if-no-files-found: ignore
+
+      - name: Tear down the isolated E2E stack
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v --remove-orphans

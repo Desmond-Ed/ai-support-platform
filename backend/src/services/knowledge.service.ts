@@ -1,8 +1,10 @@
+import { prisma } from '../config/db.js';
 import { KnowledgeDocumentRepository } from '../repositories/KnowledgeDocumentRepository.js';
-import { knowledgeIngestionQueue } from '../queues/knowledgeQueue.js';
+import { knowledgeIngestionJobId, knowledgeIngestionQueue } from '../queues/knowledgeQueue.js';
 import type { KnowledgeDocument } from '../generated/prisma/client.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
+import { AuditService } from './audit.service.js';
 
 export interface CreateKnowledgeDocumentInput {
   title: string;
@@ -17,19 +19,41 @@ export const KnowledgeService = {
   },
 
   async createDocument(input: CreateKnowledgeDocumentInput): Promise<KnowledgeDocument> {
-    const document = await KnowledgeDocumentRepository.create({
-      title: input.title,
-      content: input.content,
-      sourceType: input.sourceType,
-      uploadedById: input.uploadedById,
-      status: 'PENDING',
+    const document = await prisma.$transaction(async (tx) => {
+      const created = await KnowledgeDocumentRepository.create(
+        {
+          title: input.title,
+          content: input.content,
+          sourceType: input.sourceType,
+          uploadedById: input.uploadedById,
+          status: 'PENDING',
+        },
+        tx,
+      );
+
+      await AuditService.record(
+        {
+          actorId: input.uploadedById,
+          action: 'KNOWLEDGE_SUBMITTED',
+          entityType: 'KnowledgeDocument',
+          entityId: created.id,
+          metadata: {
+            title: created.title,
+            sourceType: created.sourceType,
+            ingestionStatus: created.status,
+          },
+        },
+        tx,
+      );
+
+      return created;
     });
 
     try {
       await knowledgeIngestionQueue.add(
         'ingest-document',
         { documentId: document.id },
-        { jobId: `knowledge-document-${document.id}` },
+        { jobId: knowledgeIngestionJobId(document.id, 0) },
       );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -38,7 +62,32 @@ export const KnowledgeService = {
         error: errorMessage,
       });
       try {
-        await KnowledgeDocumentRepository.markFailed(document.id, errorMessage);
+        await prisma.$transaction(async (tx) => {
+          const { count } = await KnowledgeDocumentRepository.markRetryEnqueueFailed(
+            document.id,
+            0,
+            errorMessage,
+            tx,
+          );
+          if (count !== 1) {
+            return;
+          }
+          await AuditService.record(
+            {
+              actorId: input.uploadedById,
+              action: 'KNOWLEDGE_INGESTION_ENQUEUE_FAILED',
+              entityType: 'KnowledgeDocument',
+              entityId: document.id,
+              metadata: {
+                documentId: document.id,
+                ingestionStatus: 'FAILED',
+                ingestionAttempt: 0,
+                jobId: knowledgeIngestionJobId(document.id, 0),
+              },
+            },
+            tx,
+          );
+        });
       } catch (updateError) {
         logger.error('Failed to mark knowledge document as failed', {
           documentId: document.id,

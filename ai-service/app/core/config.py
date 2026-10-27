@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # OpenAI key — required when LLM_PROVIDER=openai
     OPENAI_API_KEY: str = ""
 
+    # Optional OpenAI-compatible base URL (used by deterministic test fixtures).
+    OPENAI_BASE_URL: str = ""
+
     # DeepSeek key — required when LLM_PROVIDER=deepseek
     DEEPSEEK_API_KEY: str = ""
 

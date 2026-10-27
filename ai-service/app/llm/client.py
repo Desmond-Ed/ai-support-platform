@@ -16,8 +16,11 @@ def get_llm() -> ChatOpenAI:
             temperature=0,
         )
 
-    return ChatOpenAI(
-        model="gpt-4o-mini",
-        api_key=settings.OPENAI_API_KEY,
-        temperature=0,
-    )
+    kwargs: dict[str, object] = {
+        "model": "gpt-4o-mini",
+        "api_key": settings.OPENAI_API_KEY,
+        "temperature": 0,
+    }
+    if settings.OPENAI_BASE_URL:
+        kwargs["base_url"] = settings.OPENAI_BASE_URL
+    return ChatOpenAI(**kwargs)  # type: ignore[arg-type]

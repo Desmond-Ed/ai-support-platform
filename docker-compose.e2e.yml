@@ -1,0 +1,176 @@
+name: ai-support-platform-e2e
+
+# Isolated E2E stack. It intentionally does not reuse the development
+# container names, host ports, database, or volumes from docker-compose.yml.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: asp-e2e-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_support_platform_e2e
+    ports:
+      - '5433:5432'
+    volumes:
+      - e2e_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d ai_support_platform_e2e']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: asp-e2e-redis
+    ports:
+      - '6381:6379'
+    volumes:
+      - e2e_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  llm-stub:
+    image: node:22-alpine
+    container_name: asp-e2e-llm-stub
+    working_dir: /app
+    command: ['node', '/app/stub-llm.mjs']
+    ports:
+      - '8082:8080'
+    volumes:
+      - ./e2e/support:/app:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asp-e2e-backend
+    environment:
+      NODE_ENV: test
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_support_platform_e2e
+      REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai-service:8000
+      JWT_ACCESS_SECRET: e2e-access-secret-not-for-production
+      JWT_REFRESH_SECRET: e2e-refresh-secret-not-for-production
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGIN: http://localhost:5174
+    ports:
+      - '4001:4000'
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      llm-stub:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    command: npm run dev:docker
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: asp-e2e-ai-service
+    environment:
+      ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_support_platform_e2e
+      REDIS_URL: redis://redis:6379
+      BACKEND_URL: http://backend:4000
+      CORS_ORIGINS: '["http://localhost:5174"]'
+      LLM_PROVIDER: deepseek
+      DEEPSEEK_API_KEY: e2e-stub-key
+      DEEPSEEK_BASE_URL: http://llm-stub:8080
+      OPENAI_API_KEY: e2e-stub-key
+      OPENAI_BASE_URL: http://llm-stub:8080/v1
+    ports:
+      - '8001:8000'
+    volumes:
+      - ./ai-service/app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      llm-stub:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: asp-e2e-frontend
+    environment:
+      VITE_API_URL: http://localhost:4001
+      VITE_SOCKET_URL: http://localhost:4001
+    ports:
+      - '5174:5173'
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    command: npm run dev -- --host
+
+volumes:
+  e2e_postgres_data:
+    name: ai-support-platform-e2e-postgres-data
+  e2e_redis_data:
+    name: ai-support-platform-e2e-redis-data

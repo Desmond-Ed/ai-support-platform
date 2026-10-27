@@ -105,6 +105,20 @@ export const ConversationRepository = {
     });
   },
 
+  async assignAgent(conversationId: string, agentId: string, db: Db = prisma): Promise<Conversation> {
+    const conversation = await db.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      select: { status: true },
+    });
+    return db.conversation.update({
+      where: { id: conversationId },
+      data: {
+        agentId,
+        ...(conversation.status === 'ESCALATED' ? { status: 'WITH_AGENT' } : {}),
+      },
+    });
+  },
+
   async updateStatus(
     conversationId: string,
     status: ConversationStatus,

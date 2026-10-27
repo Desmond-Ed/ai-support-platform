@@ -12,7 +12,10 @@ def _client() -> OpenAIEmbeddings:
     settings = get_settings()
     if not settings.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is required for knowledge embeddings")
-    return OpenAIEmbeddings(model=MODEL, api_key=settings.OPENAI_API_KEY)
+    kwargs: dict[str, object] = {"model": MODEL, "api_key": settings.OPENAI_API_KEY}
+    if settings.OPENAI_BASE_URL:
+        kwargs["base_url"] = settings.OPENAI_BASE_URL
+    return OpenAIEmbeddings(**kwargs)  # type: ignore[arg-type]
 
 
 def _validated(vectors: list[list[float]], expected: int) -> list[list[float]]:

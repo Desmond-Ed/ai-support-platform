@@ -4,9 +4,9 @@
 
 The active project is `C:\Users\USER\Documents\ai-support-platform`, branch
 `phase5-chat-ui`. The customer-to-agent workflow plus operational analytics,
-audit visibility, and knowledge moderation are implemented and verified locally,
-including database-backed integration tests, browser E2E coverage, and CI job
-definitions.
+audit visibility, and knowledge moderation are implemented and verified locally
+and in hosted CI, including database-backed integration tests and browser E2E
+coverage.
 
 - Backend: Node.js/Express/TypeScript under `backend/`, API prefix `/api`.
 - Frontend: React/Vite under `frontend/`.
@@ -128,8 +128,8 @@ paid provider credentials are needed.
 - The two bounded follow-up tasks (initial enqueue-failure guard and ticket
   transaction integration tests) passed Astra audit. This is not full-phase
   independent audit approval.
-- GitHub Actions now has frontend/backend/AI/E2E and service-backed backend
-  integration jobs, but hosted CI remains unverified for the latest changes and
-  deployment has not completed.
+- Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1:
+  frontend, backend, backend integration, AI service, and E2E. Deployment has
+  not completed.
 - Remaining hardening: hosted deployment secrets, external tracing, durable cost
   aggregation, and optional abandoned-ingestion reconciliation.

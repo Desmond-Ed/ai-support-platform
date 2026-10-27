@@ -147,10 +147,8 @@
 
 1. Configure hosted deployment secrets, external tracing, and durable cost
    aggregation.
-2. Execute the updated GitHub Actions workflow on hosted runners and confirm the
-   service-backed integration job and E2E artifacts.
-3. Extend CI beyond Chromium to cross-browser runs if the product requires it.
-4. Consider reconciliation for ingestion jobs abandoned by a worker crash
+2. Extend CI beyond Chromium to cross-browser runs if the product requires it.
+3. Consider reconciliation for ingestion jobs abandoned by a worker crash
    (currently BullMQ owns retries and Node exposes manual retry).
 
 ## Phase validation record
@@ -172,8 +170,9 @@
 - The two bounded follow-up tasks (initial enqueue-failure guard and ticket
   transaction integration tests) passed Astra audit. This is not full-phase
   independent audit approval.
-- GitHub Actions workflow is configured but remains unverified on hosted runners
-  for the latest changes; hosted CI and deployment have not completed.
+- Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1
+  (frontend, backend, backend integration, AI service, E2E). Deployment has not
+  completed.
 
 ## Definition of done for each feature
 

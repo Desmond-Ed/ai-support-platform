@@ -116,4 +116,4 @@ filters for admins.
 Local validation covers backend unit/integration tests, frontend build/lint,
 AI tests/Ruff including a database-backed retrieval test, a clean migration, a
 forward migration over legacy data, and the full isolated Playwright suite.
-Hosted GitHub Actions has not been executed for the latest changes.
+Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1.

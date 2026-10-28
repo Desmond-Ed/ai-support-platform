@@ -143,20 +143,39 @@
   migrations, seeds identities, runs Playwright, uploads artifacts, and always
   tears down.
 
+### Deployment hardening
+
+- Free-tier target documented in `docs/deployment.md`: Vercel frontend, Render
+  free Docker services for backend/AI, Neon Postgres/pgvector, and flat-rate
+  Redis with `noeviction`.
+- AI chat provider is configurable for OpenAI, DeepSeek direct
+  (`deepseek-flash`), or an OpenAI-compatible endpoint such as NVIDIA Build;
+  embeddings remain OpenAI `text-embedding-3-small` and independently require
+  `OPENAI_API_KEY`.
+- AI HTTP 429s retry with exponential backoff and return a clean `503` when
+  exhausted. The AI service adds `/api/ready` for database and embeddings-key
+  readiness while `/api/health` remains dependency-free.
+- Production Docker port binding uses Render's `PORT`; Neon pooled/direct URLs
+  are separated through `DATABASE_URL` and `DATABASE_URL_UNPOOLED`; deployed
+  CORS origins are environment-driven.
+- BullMQ ingestion now uses 4 attempts with exponential backoff, communicates
+  attempt state to Python, writes `FAILED` only on the final attempt, and
+  reconciles a still-unfinished document if the final HTTP attempt is aborted.
+
 ## Remaining next
 
 1. Configure hosted deployment secrets, external tracing, and durable cost
    aggregation.
 2. Extend CI beyond Chromium to cross-browser runs if the product requires it.
-3. Consider reconciliation for ingestion jobs abandoned by a worker crash
-   (currently BullMQ owns retries and Node exposes manual retry).
+3. Consider a periodic reconciliation sweep for jobs lost before the final
+   failure handler runs (BullMQ owns retries and Node exposes manual retry).
 
 ## Phase validation record
 
 - Backend: 70 Vitest tests passed; TypeScript build and ESLint passed.
 - Backend integration: 11 database-backed tests passed against isolated
   PostgreSQL.
-- AI service: 15 pytest tests passed, 1 skipped (the opt-in DB test); Ruff
+- AI service: 29 pytest tests passed, 1 skipped (the opt-in DB test); Ruff
   passed. The skipped database-backed retrieval test passed separately with the
   isolated database.
 - Frontend: TypeScript/Vite build and ESLint passed.
@@ -170,9 +189,11 @@
 - The two bounded follow-up tasks (initial enqueue-failure guard and ticket
   transaction integration tests) passed Astra audit. This is not full-phase
   independent audit approval.
-- Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1
-  (frontend, backend, backend integration, AI service, E2E). Deployment has not
-  completed.
+- Hosted GitHub Actions run `40545993649` passed all five jobs on PR #1
+  (frontend, backend, backend integration, AI service, E2E). Post-merge `main`
+  run `40590896540` also passed all five jobs.
+- Deployment preparation is implemented, but no hosted Render/Neon/Vercel
+  deployment has been executed yet.
 
 ## Definition of done for each feature
 

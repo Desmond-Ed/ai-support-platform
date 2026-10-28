@@ -12,7 +12,7 @@ const app = createApp();
 const httpServer = createServer(app);
 
 // Socket.IO is attached to the same HTTP server (not a separate port) so
-// Railway only needs to expose one port for the backend service.
+// Render only needs to expose one port for the backend service.
 const io = initSocketServer(httpServer);
 NotificationService.setEmitter((userId, payload) => {
   emitNotification(io, [userId], payload);

@@ -122,6 +122,20 @@ export const KnowledgeDocumentRepository = {
     });
   },
 
+  async markIngestionFailedIfUnfinished(
+    documentId: string,
+    errorMessage: string,
+    db: Db = prisma,
+  ) {
+    return db.knowledgeDocument.updateMany({
+      where: {
+        id: documentId,
+        status: { in: ['PENDING', 'PROCESSING'] },
+      },
+      data: { status: 'FAILED', errorMessage },
+    });
+  },
+
   async claimIngestionRetry(
     documentId: string,
     expectedModerationVersion: number | undefined,

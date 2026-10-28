@@ -11,7 +11,7 @@ flowchart TB
         FE["Frontend<br/>React + Vite + TS + Tailwind<br/>(Vercel)"]
     end
 
-    subgraph NodeBackend["Backend — Node.js + Express + TS (Railway)"]
+    subgraph NodeBackend["Backend - Node.js + Express + TS (Render)"]
         API["REST API<br/>routes/controllers/services"]
         AUTH["Auth<br/>JWT + refresh (httpOnly cookies)"]
         SOCK["Socket.IO server"]
@@ -19,17 +19,17 @@ flowchart TB
         PRISMA["Prisma ORM"]
     end
 
-    subgraph AIService["AI Service — Python + FastAPI (Railway)"]
+    subgraph AIService["AI Service - Python + FastAPI (Render)"]
         RAG["RAG pipeline<br/>LangChain/LlamaIndex"]
-        EMB["Embeddings"]
+        EMB["Embeddings<br/>(OpenAI)"]
         RET["Retrieval (pgvector)"]
-        LLM["LLM client"]
+        LLM["LLM client<br/>(DeepSeek/NVIDIA/OpenAI)"]
         EVAL["Evaluation<br/>(groundedness/hallucination)"]
     end
 
     subgraph Data
-        PG[("PostgreSQL + pgvector")]
-        RD[("Redis<br/>cache + BullMQ")]
+        PG[("PostgreSQL + pgvector<br/>(Neon)")]
+        RD[("Redis / Valkey<br/>cache + BullMQ")]
     end
 
     FE -- "HTTPS REST" --> API
@@ -58,7 +58,7 @@ flowchart TB
 
 - **Node owns application state**: users, tickets, conversations, auth,
   role-based access control. Every write to these entities goes through
-  Node/Prisma — the AI service never writes to these tables directly.
+  Node/Prisma - the AI service never writes to these tables directly.
 - **Python owns AI processing only**: embeddings, retrieval, LLM calls,
   RAG orchestration, groundedness/hallucination evaluation. It can *read*
   the knowledge-base/pgvector tables it needs for retrieval, but it does
@@ -71,8 +71,16 @@ flowchart TB
 
 ## Deploy targets
 
-- Frontend → Vercel
-- Backend, AI service, Postgres, Redis → Railway
+- Frontend -> Vercel
+- Backend and AI service -> Render free Web Services (Docker)
+- PostgreSQL + pgvector -> Neon free
+- Redis / BullMQ -> flat-rate Redis with `noeviction` (Aiven Valkey free
+  preferred; Redis Cloud free fallback)
+
+Render free services sleep after inactivity and cold-start on the next
+request. The deployment plan accepts that behavior: chat has the existing
+15-second timeout plus human escalation, and ingestion has a multi-attempt
+BullMQ retry budget. See `docs/deployment.md`.
 
 ## Status
 
@@ -88,19 +96,36 @@ revokes it. Each refresh JWT includes a random `jti` so tokens issued for the
 same user in the same second remain distinct; `jti` is not the Prisma row ID.
 
 The backend runs on port 4000, the AI service on 8000, and the frontend on
-5173 in Docker Compose. Knowledge document creation persists `PENDING`, writes
-a submission audit, and enqueues asynchronous ingestion with a deterministic job
-ID; the AI service performs bounded paragraph-aware chunking. Provider-backed
-embeddings and pgvector writes use `text-embedding-3-small` and are validated at
-1536 dimensions. Retrieval only uses chunks whose document is both ingestion
-`READY` and moderation `APPROVED`, with a conservative degraded fallback.
+5173 in Docker Compose. The production AI image binds `${PORT:-8000}`; the
+backend reads `PORT` from the environment and defaults to 4000. Knowledge
+document creation persists `PENDING`, writes a submission audit, and enqueues
+asynchronous ingestion with a deterministic job ID; the AI service performs
+bounded paragraph-aware chunking. Ingestion uses four BullMQ attempts with
+exponential backoff, and the AI service only marks a document `FAILED` on the
+final attempt. The worker also reconciles a still-unfinished document to
+`FAILED` if the final HTTP attempt is aborted before the AI service can update
+it. Provider-backed embeddings and pgvector writes use
+`text-embedding-3-small` and are validated at 1536 dimensions. Chat can use
+OpenAI, DeepSeek direct (`deepseek-flash`), or an OpenAI-compatible provider
+such as NVIDIA Build; embeddings always use OpenAI and therefore require
+`OPENAI_API_KEY` independently. Retrieval only uses chunks whose document is
+both ingestion `READY` and moderation `APPROVED`, with a conservative degraded
+fallback that now logs the failure instead of failing silently.
+
+The AI service exposes `/api/health` as a dependency-free liveness probe and
+`/api/ready` as a readiness probe that checks the database connection and the
+presence of an embeddings key. Render health checks use `/api/health` so a
+sleeping Neon database does not make the service appear dead.
 
 Socket.IO authenticates access JWTs during connection, places clients in private
 user rooms, and provides server-side emitters for `ticket_updated`,
 `agent_assigned`, and `notification`. Resource-specific room authorization is
 enforced against conversation ownership and ticket customer or active assignment
 before room joins (admins may subscribe to any conversation or ticket); the
-frontend exposes a reusable client and event hook.
+frontend exposes a reusable client and event hook. Express and Socket.IO read
+the same comma-separated `CORS_ORIGIN` value; the AI service reads a JSON-list
+`CORS_ORIGINS` value. Deployed Vercel origins are supplied through environment
+variables with no per-deploy code changes.
 
 Operational state is Node-owned. Moderation transitions use
 `moderationVersion` for optimistic concurrency and audit in the same
@@ -116,4 +141,7 @@ filters for admins.
 Local validation covers backend unit/integration tests, frontend build/lint,
 AI tests/Ruff including a database-backed retrieval test, a clean migration, a
 forward migration over legacy data, and the full isolated Playwright suite.
-Hosted GitHub Actions run `40542818019` passed all five jobs on PR #1.
+Hosted GitHub Actions run `40545993649` passed all five jobs on PR #1, and
+post-merge `main` run `40590896540` passed all five jobs. Deployment
+preparation is implemented, but no hosted Render/Neon/Vercel deployment has
+been executed from this repository yet.

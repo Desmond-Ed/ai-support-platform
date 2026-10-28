@@ -49,3 +49,18 @@ def test_retrieval_requires_ready_and_approved_documents(monkeypatch) -> None:
     assert "kd.status = 'READY'" in sql
     assert 'kd."moderationStatus" = \'APPROVED\'' in sql
     assert params[1] == 3
+
+
+def test_retrieval_logs_failures_and_returns_empty_context(monkeypatch, caplog) -> None:
+    def fail_embedding(_query: str):
+        raise RuntimeError("embedding provider unavailable")
+
+    monkeypatch.setattr(service.settings, "DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr(service, "embed_query", fail_embedding)
+
+    with caplog.at_level("ERROR"):
+        result = service.retrieve_context("How long do refunds take?", limit=3)
+
+    assert result == []
+    assert "Knowledge retrieval failed" in caplog.text
+    assert "embedding provider unavailable" in caplog.text

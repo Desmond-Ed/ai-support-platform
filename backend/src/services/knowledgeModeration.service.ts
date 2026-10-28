@@ -6,6 +6,7 @@ import type {
 import {
   getKnowledgeIngestionJobState,
   knowledgeIngestionJobId,
+  knowledgeIngestionJobOptions,
   knowledgeIngestionQueue,
 } from '../queues/knowledgeQueue.js';
 import {
@@ -227,7 +228,7 @@ export const KnowledgeModerationService = {
       await knowledgeIngestionQueue.add(
         'ingest-document',
         { documentId },
-        { jobId },
+        { jobId, ...knowledgeIngestionJobOptions },
       );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

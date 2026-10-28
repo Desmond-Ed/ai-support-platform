@@ -26,6 +26,11 @@ existing customer, agent, notification, and admin workflows.
 | ------ | ------------- | ---- | --------------------------------------------------------- |
 | GET    | `/api/health` | none | Liveness probe. Returns `{ status, service, timestamp }`. |
 
+The AI service (not proxied through the backend) also exposes `/api/health` as
+a dependency-free liveness probe and `/api/ready` as a readiness probe. Readiness
+returns `200` only when the database is reachable and `OPENAI_API_KEY` is
+configured for embeddings; otherwise it returns `503` with a `checks` object.
+
 ### Authentication
 
 | Method | Path                   | Auth                    | Description                                                                           |

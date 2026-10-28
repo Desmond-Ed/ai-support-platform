@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = ""
 
     # LLM provider — supported: "openai", "deepseek"
-    LLM_PROVIDER: str = "openai"
+    LLM_PROVIDER: str = "openai"  # openai | deepseek | openai-compatible
 
     # OpenAI key — required when LLM_PROVIDER=openai
     OPENAI_API_KEY: str = ""
@@ -32,6 +32,12 @@ class Settings(BaseSettings):
 
     # DeepSeek base URL override (keep default unless self-hosting)
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-flash"
+
+    # Generic OpenAI-compatible endpoint (for example NVIDIA Build).
+    LLM_BASE_URL: str = ""
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = ""
     LLM_INPUT_COST_PER_MILLION: float = 0.15
     LLM_OUTPUT_COST_PER_MILLION: float = 0.60
 

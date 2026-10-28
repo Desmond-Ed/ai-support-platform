@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.core.config import get_settings
 from app.embeddings.client import embed_query
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
@@ -42,6 +44,7 @@ def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
                 )
                 rows = cur.fetchall()
     except Exception:
+        logger.exception("Knowledge retrieval failed; returning empty context")
         return []
 
     return [

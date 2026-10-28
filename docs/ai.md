@@ -18,7 +18,7 @@ fact.
    - No → BullMQ job. Node enqueues, returns immediately, and the AI
      service (or a worker) processes it out-of-band.
 3. **Independent scaling**: Node and Python are deployed as separate
-   Railway services with separate resource limits, so a CPU-heavy
+   Render services with separate resource limits, so a CPU-heavy
    embedding batch job doesn't starve the request-handling Node process,
    and vice versa. Each can be scaled by replica count independently.
 
@@ -36,6 +36,25 @@ The trade-off is that two services write to one database, and Python's raw SQL
 must track Prisma's column names. Moving document-status updates to Node remains
 a possible follow-up.
 
+## Chat provider configuration
+
+- `LLM_PROVIDER=openai` uses `OPENAI_API_KEY` and the existing `gpt-4o-mini`
+  default. `OPENAI_BASE_URL` remains available for deterministic test fixtures.
+- `LLM_PROVIDER=deepseek` uses `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`
+  (`https://api.deepseek.com`), and `DEEPSEEK_MODEL` (`deepseek-flash`).
+  The client uses the configured base URL as-is; it does not append `/v1`.
+- `LLM_PROVIDER=openai-compatible` uses `LLM_BASE_URL`, `LLM_API_KEY`, and
+  `LLM_MODEL`. NVIDIA Build is the documented example:
+  `https://integrate.api.nvidia.com/v1` and
+  `deepseek-ai/deepseek-v4.1-flash` (checked 2026-10-28).
+- Embeddings are independent of the chat provider. They always use OpenAI
+  `text-embedding-3-small` at 1536 dimensions, so `OPENAI_API_KEY` is required
+  even when chat runs on DeepSeek or NVIDIA. The readiness endpoint reports a
+  missing embeddings key.
+- HTTP 429 responses get up to three attempts (two retries) with exponential
+  backoff. If the provider is still rate limited, `/api/chat` returns a clean
+  `503` with a retry-later message instead of a raw provider error.
+
 ## Phase 1 — Health check (sync)
 
 - **Call**: none yet between services; each exposes its own `/api/health`
@@ -46,6 +65,11 @@ a possible follow-up.
 - **Scaling**: each service's Dockerfile/compose entry is independent
   (separate build context, separate container, separate port). Nothing
   to reconcile yet.
+- **Readiness**: the AI service also exposes `/api/ready`, which checks the
+  database connection and the embeddings key. It is separate from `/api/health`
+  so liveness never depends on Neon being awake. Render health checks use
+  `/api/health`; `/api/ready` is for deploy verification and operational
+  diagnostics.
 
 ## Phase 2 — Knowledge-base write ownership (established, not yet exercised)
 
@@ -69,8 +93,9 @@ a possible follow-up.
   forgotten: if the Python worker crashes mid-ingestion, the
   `KnowledgeDocument` row is left at `PROCESSING` indefinitely unless
   Phase 7 adds either a timeout/reconciliation job or a try/catch that
-  writes `FAILED` + `errorMessage` on the way out. Decide and record
-  this when Phase 7 actually builds the worker.
+  writes `FAILED` + `errorMessage` on the way out. This was resolved in the
+  deployment-hardening pass: automatic BullMQ retries, final-attempt `FAILED`
+  writes, and worker-side reconciliation cover the abandoned row.
 - **Scaling**: unaffected by this decision — Python's direct Postgres
   connection is a separate concern from the Node↔Python HTTP boundary,
   and doesn't change either service's independent scaling story.
@@ -104,9 +129,17 @@ a possible follow-up.
   BullMQ job, claims `FAILED -> PENDING`, increments `ingestionAttempt`, and
   enqueues `knowledge-document-<id>-retry-<attempt>`.
 - If retry enqueueing fails, Node restores `FAILED` and records
-  `KNOWLEDGE_INGESTION_RETRY_ENQUEUE_FAILED`. A failed HTTP ingestion call is
-  retried by BullMQ with the original job ID, so it cannot double-create chunks
-  concurrently.
+  `KNOWLEDGE_INGESTION_RETRY_ENQUEUE_FAILED`. BullMQ owns the automatic retry:
+  four attempts with exponential backoff starting at 30 seconds. Each HTTP
+  attempt has a 30-second timeout, which tolerates a Render free-service cold
+  start without leaving the document stuck.
+- Node passes `attempt` and `maxAttempts` to Python. Python only writes `FAILED`
+  on the final attempt; earlier failures leave the document eligible for the
+  next attempt. If the final request is aborted before Python can update the row,
+  the worker reconciles a still-`PENDING`/`PROCESSING` document to `FAILED`.
+  Automatic retries reuse the deterministic job ID, so they cannot double-create
+  chunks concurrently. Manual retry remains Node-owned and still requires the
+  document to be `FAILED`.
 
 ## Handoff and degraded behavior
 
@@ -152,7 +185,11 @@ a possible follow-up.
 ## Validation
 
 - Python unit coverage asserts the READY + APPROVED retrieval predicate and the
-  degraded empty-context path.
+  degraded empty-context path, including diagnostic logging.
+- AI tests cover provider configuration (DeepSeek, OpenAI-compatible, unknown
+  provider), 429 retry/backoff exhaustion, the clean `503` chat response, and
+  `/api/ready` success/failure checks. The default run has 29 passing tests and
+  1 opt-in database test skipped.
 - A database-backed pytest check inserts approved, pending, and failed document
   rows with pgvector embeddings and asserts only the approved row is returned.
   It is opt-in with `RUN_DB_INTEGRATION=1` and a `DATABASE_URL`; the local

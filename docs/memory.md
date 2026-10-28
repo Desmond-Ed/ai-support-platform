@@ -36,7 +36,30 @@
   the retry fixture has 13 chunks.
 - The applied moderation migration is
   `20261026180000_add_knowledge_moderation`; migration config is
-  `backend/prisma.config.ts`.
+  `backend/prisma.config.ts`, which prefers `DATABASE_URL_UNPOOLED` for
+  migrations and falls back to `DATABASE_URL`.
+- Deployment target: Vercel frontend, Render free Docker services for backend
+  and AI, Neon Postgres/pgvector, and flat-rate Redis (Aiven Valkey preferred;
+  Redis Cloud fallback) with `maxmemory-policy=noeviction`.
+- Render free services sleep after inactivity and consume 750 instance hours per
+  workspace per month; two always-on services exceed that budget. Do not add
+  keep-alive pings.
+- Neon needs a pooled `-pooler` URL for the running apps and a direct URL for
+  `prisma migrate deploy`; both use `sslmode=require`. Redis TLS uses `rediss://`.
+- DeepSeek direct chat defaults are base URL `https://api.deepseek.com` and
+  model `deepseek-flash`. The OpenAI-compatible NVIDIA example is
+  `https://integrate.api.nvidia.com/v1` with
+  `deepseek-ai/deepseek-v4.1-flash`. These were checked on 2026-10-28.
+- Embeddings always use OpenAI `text-embedding-3-small` at 1536 dimensions, so
+  `OPENAI_API_KEY` is required even when chat uses DeepSeek/NVIDIA.
+- AI `/api/health` is dependency-free; `/api/ready` checks the database and
+  embeddings key and returns 503 when either is unavailable.
+- BullMQ knowledge ingestion uses 4 attempts with exponential backoff starting
+  at 30 seconds. Python marks `FAILED` only on the final attempt; Node reconciles
+  a still-`PENDING`/`PROCESSING` document if the final HTTP attempt is aborted.
+- Aiven Valkey free capacity and the `noeviction` requirement come from provider
+  documentation; whether this account can set `noeviction` on the free plan is
+  not yet verified. Live Neon/Aiven TLS handshakes are also unverified.
 
 ## Decisions
 
@@ -70,6 +93,7 @@
 
 ## Next implementation surface
 
-Address hosted deployment hardening, tracing, durable cost aggregation, hosted
-CI verification, and optional reconciliation for ingestion jobs abandoned by a
-worker crash. Cross-browser E2E remains optional.
+Execute the hosted Vercel/Render/Neon/Valkey deployment, configure production
+secrets, verify live TLS and Redis `noeviction`, add external tracing and durable
+cost aggregation, and consider a periodic sweep for jobs lost before the final
+failure handler runs. Cross-browser E2E remains optional.

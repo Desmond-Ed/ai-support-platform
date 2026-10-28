@@ -10,6 +10,32 @@ router = APIRouter()
 settings = get_settings()
 
 
+def _positive_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _mark_failed(document_id: str, error_message: str) -> None:
+    try:
+        import psycopg
+
+        with psycopg.connect(settings.DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE knowledge_documents
+                    SET status = 'FAILED', "errorMessage" = %s, "updatedAt" = NOW()
+                    WHERE id = %s
+                    """,
+                    (error_message, document_id),
+                )
+    except Exception:
+        pass
+
+
 @router.post("/knowledge/ingest")
 async def ingest_knowledge_document(payload: dict) -> dict:
     """Chunk + embed + store a pending KnowledgeDocument row.
@@ -19,6 +45,9 @@ async def ingest_knowledge_document(payload: dict) -> dict:
     document_id = str(payload.get("documentId") or "").strip()
     if not document_id:
         raise HTTPException(status_code=400, detail="documentId is required")
+
+    attempt = _positive_int(payload.get("attempt"), 1)
+    max_attempts = _positive_int(payload.get("maxAttempts"), attempt)
 
     if not settings.DATABASE_URL:
         raise HTTPException(status_code=503, detail="Knowledge-base database unavailable")
@@ -86,22 +115,13 @@ async def ingest_knowledge_document(payload: dict) -> dict:
                     (document_id,),
                 )
 
-    except HTTPException:
+    except HTTPException as exc:
+        if attempt >= max_attempts:
+            _mark_failed(document_id, str(exc.detail))
         raise
     except Exception as exc:
-        try:
-            with psycopg.connect(settings.DATABASE_URL) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE knowledge_documents
-                        SET status = 'FAILED', "errorMessage" = %s, "updatedAt" = NOW()
-                        WHERE id = %s
-                        """,
-                        (str(exc), document_id),
-                    )
-        except Exception:
-            pass
+        if attempt >= max_attempts:
+            _mark_failed(document_id, str(exc))
         raise HTTPException(status_code=500, detail="Knowledge ingestion failed") from exc
 
     return {"status": "READY", "documentId": document_id}

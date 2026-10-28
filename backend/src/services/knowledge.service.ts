@@ -1,6 +1,10 @@
 import { prisma } from '../config/db.js';
 import { KnowledgeDocumentRepository } from '../repositories/KnowledgeDocumentRepository.js';
-import { knowledgeIngestionJobId, knowledgeIngestionQueue } from '../queues/knowledgeQueue.js';
+import {
+  knowledgeIngestionJobId,
+  knowledgeIngestionJobOptions,
+  knowledgeIngestionQueue,
+} from '../queues/knowledgeQueue.js';
 import type { KnowledgeDocument } from '../generated/prisma/client.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
@@ -53,7 +57,10 @@ export const KnowledgeService = {
       await knowledgeIngestionQueue.add(
         'ingest-document',
         { documentId: document.id },
-        { jobId: knowledgeIngestionJobId(document.id, 0) },
+        {
+          jobId: knowledgeIngestionJobId(document.id, 0),
+          ...knowledgeIngestionJobOptions,
+        },
       );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.api import chat as chat_api
+from app.llm.client import LLMUnavailableError
 from app.main import app
 
 
@@ -75,3 +76,23 @@ def test_chat_escalates_when_retrieval_is_unavailable(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["should_escalate"] is True
+
+
+def test_chat_returns_clean_503_when_rate_limit_retries_are_exhausted(monkeypatch):
+    async def exhausted(_llm, _messages):
+        raise LLMUnavailableError("retries exhausted")
+
+    monkeypatch.setattr(chat_api, "retrieve_context", lambda query, limit=4: [])
+    monkeypatch.setattr(chat_api, "get_llm", lambda: FakeGroundedLLM())
+    monkeypatch.setattr(chat_api, "invoke_with_retry", exhausted)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={"conversation_id": "conversation-999", "message": "When do refunds arrive?"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "AI provider is rate limited; please retry shortly"
+    }

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
 from app.evaluation.grounding import evaluate_grounding
-from app.llm.client import get_llm
+from app.llm.client import LLMUnavailableError, get_llm, invoke_with_retry
 from app.models.chat import ChatRequest, ChatResponse
 from app.observability.metrics import usage_and_cost
 from app.retrieval.service import retrieve_context
@@ -39,12 +39,18 @@ async def chat(request: ChatRequest) -> ChatResponse:
         user_prompt = request.message
 
     try:
-        response = await get_llm().ainvoke(
+        response = await invoke_with_retry(
+            get_llm(),
             [
                 ("system", system_prompt),
                 ("user", user_prompt),
-            ]
+            ],
         )
+    except LLMUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider is rate limited; please retry shortly",
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="AI service unavailable") from exc
 

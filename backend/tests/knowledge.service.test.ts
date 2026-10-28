@@ -16,6 +16,10 @@ vi.mock('../src/repositories/KnowledgeDocumentRepository.js', () => ({
 }));
 vi.mock('../src/queues/knowledgeQueue.js', () => ({
   knowledgeIngestionQueue: { add },
+  knowledgeIngestionJobOptions: {
+    attempts: 4,
+    backoff: { type: 'exponential', delay: 30_000 },
+  },
   knowledgeIngestionJobId: (documentId: string, attempt: number) =>
     attempt <= 0 ? `knowledge-document-${documentId}` : `knowledge-document-${documentId}-retry-${attempt}`,
 }));
@@ -86,7 +90,11 @@ describe('KnowledgeService', () => {
     expect(add).toHaveBeenCalledWith(
       'ingest-document',
       { documentId: 'doc-2' },
-      { jobId: 'knowledge-document-doc-2' },
+      {
+        jobId: 'knowledge-document-doc-2',
+        attempts: 4,
+        backoff: { type: 'exponential', delay: 30_000 },
+      },
     );
     expect(add.mock.calls[0][2].jobId).not.toContain(':');
   });

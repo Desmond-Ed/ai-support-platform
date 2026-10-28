@@ -22,23 +22,24 @@ behind that boundary, recorded phase by phase.
 | AI service | Python + FastAPI, LangChain/LlamaIndex, RAG |
 | Testing | Vitest, pytest, Playwright |
 | Infra | Docker + Docker Compose, GitHub Actions |
-| Deploy | Vercel (frontend), Railway (backend/AI service/DB) |
+| Deploy | Vercel (frontend), Render (backend/AI service), Neon (Postgres), Aiven Valkey or Redis Cloud (BullMQ) |
 
 ## Repository structure
 
 ```
 ai-support-platform/
-├── frontend/       React + Vite + TS + Tailwind
-├── backend/        Node.js + Express + TS + Prisma
-├── ai-service/     Python + FastAPI (RAG, embeddings, LLM, evaluation)
-├── knowledge-base/ Source documents for RAG ingestion
-├── e2e/            Playwright end-to-end tests
-├── docs/           Architecture, AI boundary decisions, and other docs
-├── docker-compose.yml
-└── .env.example
+|-- frontend/       React + Vite + TS + Tailwind
+|-- backend/        Node.js + Express + TS + Prisma
+|-- ai-service/     Python + FastAPI (RAG, embeddings, LLM, evaluation)
+|-- knowledge-base/ Source documents for RAG ingestion
+|-- e2e/            Playwright end-to-end tests
+|-- docs/           Architecture, AI boundary decisions, and other docs
+|-- docker-compose.yml
+`-- .env.example
 ```
 
 Full system diagram: [`docs/architecture.md`](docs/architecture.md).
+Deployment guide: [`docs/deployment.md`](docs/deployment.md).
 
 ## Setup
 
@@ -46,8 +47,10 @@ Full system diagram: [`docs/architecture.md`](docs/architecture.md).
 - Node.js 22+
 - Python 3.12+
 - Docker + Docker Compose
-- An LLM provider API key (OpenAI, for the `OPENAI_API_KEY` env var —
-  needed from Phase 6 onward, not required to boot Phase 1's scaffold)
+- An LLM provider API key. Chat can use OpenAI, DeepSeek, or an
+  OpenAI-compatible endpoint such as NVIDIA Build. Embeddings always use
+  OpenAI `text-embedding-3-small`, so `OPENAI_API_KEY` is required even when
+  chat uses DeepSeek or NVIDIA.
 
 ### 1. Clone and configure environment
 
@@ -60,7 +63,7 @@ cp .env.example ai-service/.env
 cp frontend/.env.example frontend/.env
 ```
 
-Edit `.env` (and the per-service copies) to fill in real values — at minimum
+Edit `.env` (and the per-service copies) to fill in real values. At minimum,
 generate real JWT secrets instead of the placeholders:
 
 ```bash
@@ -74,12 +77,12 @@ docker-compose up --build
 ```
 
 This starts:
-- `postgres` — Postgres 16 with the `pgvector` extension enabled on first
+- `postgres` - Postgres 16 with the `pgvector` extension enabled on first
   boot (see `docker/postgres/init.sql`)
 - `redis`
-- `backend` — Express API on `:4000` (hot reload)
-- `ai-service` — FastAPI on `:8000` (hot reload)
-- `frontend` — Vite dev server on `:5173`
+- `backend` - Express API on `:4000` (hot reload)
+- `ai-service` - FastAPI on `:8000` (hot reload)
+- `frontend` - Vite dev server on `:5173`
 
 ### Clean clone boot
 
@@ -96,6 +99,7 @@ docker compose up -d --build backend
 - Frontend: http://localhost:5173
 - Backend health: http://localhost:4000/api/health
 - AI service health: http://localhost:8000/api/health
+- AI service readiness: http://localhost:8000/api/ready
 - AI service interactive docs: http://localhost:8000/docs
 
 ### Running services without Docker (local dev)

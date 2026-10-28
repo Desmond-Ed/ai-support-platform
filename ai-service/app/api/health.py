@@ -3,6 +3,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
+from app.embeddings.client import embedding_configuration_error
+from app.llm.client import llm_configuration_error
 
 router = APIRouter()
 settings = get_settings()
@@ -23,7 +25,9 @@ def health_check() -> dict[str, str]:
 def readiness_check() -> dict[str, object]:
     checks = {
         "database": False,
-        "embeddings_key": bool(settings.OPENAI_API_KEY),
+        "pgvector": False,
+        "llm_config": llm_configuration_error() is None,
+        "embeddings_config": embedding_configuration_error() is None,
     }
 
     if settings.DATABASE_URL:
@@ -34,8 +38,17 @@ def readiness_check() -> dict[str, object]:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
                     checks["database"] = cur.fetchone() is not None
-        except Exception:
-            logger.exception("Readiness database check failed")
+
+                    cur.execute(
+                        "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')"
+                    )
+                    row = cur.fetchone()
+                    checks["pgvector"] = bool(row and row[0])
+        except Exception as exc:
+            logger.warning(
+                "Readiness database check failed",
+                extra={"error_type": type(exc).__name__},
+            )
 
     if all(checks.values()):
         return {"status": "ready", "checks": checks}

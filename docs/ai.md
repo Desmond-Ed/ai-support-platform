@@ -47,13 +47,20 @@ a possible follow-up.
   `LLM_MODEL`. NVIDIA Build is the documented example:
   `https://integrate.api.nvidia.com/v1` and
   `deepseek-ai/deepseek-v4.1-flash` (checked 2026-10-28).
-- Embeddings are independent of the chat provider. They always use OpenAI
-  `text-embedding-3-small` at 1536 dimensions, so `OPENAI_API_KEY` is required
-  even when chat runs on DeepSeek or NVIDIA. The readiness endpoint reports a
-  missing embeddings key.
-- HTTP 429 responses get up to three attempts (two retries) with exponential
-  backoff. If the provider is still rate limited, `/api/chat` returns a clean
-  `503` with a retry-later message instead of a raw provider error.
+- Embeddings are independent of the chat provider. `EMBEDDINGS_PROVIDER`
+  selects Gemini (`gemini-embedding-001`, default) or OpenAI
+  (`text-embedding-3-small`). Both are validated at 1536 dimensions. Gemini
+  uses `RETRIEVAL_DOCUMENT` for ingestion, `RETRIEVAL_QUERY` for retrieval,
+  `output_dimensionality=1536`, and L2 normalization for truncated vectors.
+  Never mix vectors from different embedding providers/models in one database.
+- Chat retries 429 and transient 5xx/529 provider responses; embeddings retry
+  429. Both use three attempts (two retries) with exponential backoff. If the
+  provider is still unavailable, `/api/chat` returns a clean `503` with a
+  retry-later message instead of a raw provider error; ingestion leaves the
+  document eligible for the BullMQ retry.
+- `/api/ready` verifies the database, pgvector extension, LLM configuration, and
+  embeddings configuration without making provider calls. `/api/health` remains
+  dependency-free.
 
 ## Phase 1 — Health check (sync)
 
@@ -66,8 +73,9 @@ a possible follow-up.
   (separate build context, separate container, separate port). Nothing
   to reconcile yet.
 - **Readiness**: the AI service also exposes `/api/ready`, which checks the
-  database connection and the embeddings key. It is separate from `/api/health`
-  so liveness never depends on Neon being awake. Render health checks use
+  database connection, pgvector extension, and required LLM/embeddings
+  configuration without provider calls. It is separate from `/api/health` so
+  liveness never depends on Neon being awake. Render health checks use
   `/api/health`; `/api/ready` is for deploy verification and operational
   diagnostics.
 
@@ -187,9 +195,9 @@ a possible follow-up.
 - Python unit coverage asserts the READY + APPROVED retrieval predicate and the
   degraded empty-context path, including diagnostic logging.
 - AI tests cover provider configuration (DeepSeek, OpenAI-compatible, unknown
-  provider), 429 retry/backoff exhaustion, the clean `503` chat response, and
-  `/api/ready` success/failure checks. The default run has 29 passing tests and
-  1 opt-in database test skipped.
+  provider), 429/5xx retry and backoff exhaustion, the clean `503` chat
+  response, Gemini/OpenAI embeddings, and `/api/ready` success/failure checks.
+  The default run has 39 passing tests and 1 opt-in database test skipped.
 - A database-backed pytest check inserts approved, pending, and failed document
   rows with pgvector embeddings and asserts only the approved row is returned.
   It is opt-in with `RUN_DB_INTEGRATION=1` and a `DATABASE_URL`; the local

@@ -48,7 +48,9 @@ def test_retrieval_requires_ready_and_approved_documents(monkeypatch) -> None:
     sql, params = connection.cursor_instance.executions[0]
     assert "kd.status = 'READY'" in sql
     assert 'kd."moderationStatus" = \'APPROVED\'' in sql
-    assert params[1] == 3
+    assert "e.model = %s" in sql
+    assert params[1] == service.embedding_model()
+    assert params[2] == 3
 
 
 def test_retrieval_logs_failures_and_returns_empty_context(monkeypatch, caplog) -> None:

@@ -66,9 +66,10 @@ native vector type, so:
 - Similarity search (Phase 7) will use raw SQL with pgvector's
   `<->` / `<=>` distance operators, expected to live in Python via
   psycopg rather than Node.
-- `1536` matches OpenAI's `text-embedding-3-small`. If a different
-  embedding model is chosen in Phase 6/7, this literal must change and a
-  new migration generated — it's not configurable at runtime.
+- `1536` matches both Gemini `gemini-embedding-001` (with
+  `output_dimensionality=1536`) and OpenAI `text-embedding-3-small`. A different
+  dimension requires a new migration; the column width is not configurable at
+  runtime. Do not mix vectors from different embedding models.
 
 ## Indexes
 

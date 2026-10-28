@@ -6,8 +6,8 @@ The active project is `C:\Users\USER\Documents\ai-support-platform`, branch
 `phase14-deployment`. The customer-to-agent workflow plus operational analytics,
 audit visibility, and knowledge moderation are implemented and verified locally
 and in hosted CI, including database-backed integration tests and browser E2E
-coverage. Deployment preparation now targets Vercel + Render + Neon + flat-rate
-Redis; see `docs/deployment.md`.
+coverage. Deployment preparation now targets Vercel + Render + Neon + Aiven
+Valkey; see `docs/deployment.md`.
 
 - Backend: Node.js/Express/TypeScript under `backend/`, API prefix `/api`.
 - Frontend: React/Vite under `frontend/`.
@@ -86,11 +86,29 @@ paid provider credentials are needed.
 - Use the Neon pooled URL (`-pooler`) for the running backend and AI service,
   and the direct URL for `prisma migrate deploy`. `backend/prisma.config.ts`
   prefers `DATABASE_URL_UNPOOLED` and falls back to `DATABASE_URL`.
-- `OPENAI_API_KEY` is required for embeddings even when chat uses DeepSeek or
-  an OpenAI-compatible provider. Chat provider settings are `LLM_PROVIDER`,
-  `DEEPSEEK_*` (direct) and `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` (generic).
-- AI `/api/health` is dependency-free; `/api/ready` checks the database and
-  embeddings key and returns `503` when either is missing.
+- `EMBEDDINGS_PROVIDER` selects `gemini` (default, `gemini-embedding-001`) or
+  `openai` (`text-embedding-3-small`); both are 1536-dimensional. Gemini uses
+  `RETRIEVAL_DOCUMENT`/`RETRIEVAL_QUERY`, output dimensionality 1536, and L2
+  normalization. `GEMINI_API_KEY` is required for the default; `OPENAI_API_KEY`
+  is only required when chat or embeddings use OpenAI. Never mix embedding
+  spaces in one database. Chat settings are `LLM_PROVIDER`, `DEEPSEEK_*`
+  (direct), and `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` (generic).
+- AI `/api/health` is dependency-free; `/api/ready` checks the database,
+  pgvector extension, LLM config, and embeddings config without provider calls
+  and returns `503` when any check fails.
+- Production seeding requires explicit `SEED_ADMIN_EMAIL` and
+  `SEED_ADMIN_PASSWORD`; it creates only that admin and never the known
+  development accounts.
+- `npm audit` findings were recorded, not auto-fixed. Backend production
+  dependencies: 12 advisories (1 critical, 9 high, 2 moderate), including
+  `proxy-addr` critical and high findings in `prisma`, `body-parser`,
+  `compression`, `engine.io`, `fast-uri`, `mysql2`, and `zod`. Full backend
+  tree including dev dependencies: 18 advisories (1 critical, 13 high, 4
+  moderate), adding `brace-expansion`, `js-yaml`, `source-map-js`, `vite`,
+  `vitest`, and `@vitest/mocker`. Frontend production dependencies are clean;
+  the full frontend tree has 5 high advisories (`brace-expansion`, `js-yaml`,
+  `source-map-js`, `vite`, `zod`). Re-check and upgrade deliberately with tests
+  before deployment.
 - BullMQ ingestion uses 4 attempts with exponential backoff starting at 30s.
   Python only marks `FAILED` on the final attempt; the worker reconciles a
   still-`PENDING`/`PROCESSING` document if the final HTTP attempt is aborted.
@@ -134,7 +152,7 @@ paid provider credentials are needed.
 - Backend: 70 Vitest tests, TypeScript build, and ESLint pass.
 - Backend integration: 11 DB-backed tests pass against the isolated E2E
   PostgreSQL.
-- AI service: 29 pytest tests pass, 1 opt-in DB test is skipped in the default
+- AI service: 39 pytest tests pass, 1 opt-in DB test is skipped in the default
   run; the DB-backed retrieval test passed separately. Ruff passes.
 - Frontend: TypeScript/Vite build and ESLint pass.
 - E2E: the latest 37 Playwright tests pass with 4 workers after the audit fixes.
@@ -150,9 +168,11 @@ paid provider credentials are needed.
   frontend, backend, backend integration, AI service, and E2E. Post-merge
   `main` run `40590896540` also passed all five jobs.
 - Deployment preparation is implemented and documented in
-  `docs/deployment.md`, but no hosted Render/Neon/Vercel deployment has been
-  executed yet. Aiven Valkey `noeviction` support and live TLS handshakes remain
-  unverified against the provider accounts.
+  `docs/deployment.md`; both production Dockerfiles build locally and
+  `docker compose config` validates. Production seeding fails before creating
+  data when the admin env vars are absent. No hosted Render/Neon/Vercel
+  deployment has been executed yet. Aiven Valkey `noeviction` support and live
+  TLS handshakes remain unverified against the provider accounts.
 - Remaining hardening: hosted deployment secrets, external tracing, durable cost
   aggregation, and a periodic sweep for jobs lost before the final failure
   handler runs.

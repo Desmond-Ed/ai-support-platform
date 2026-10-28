@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     LLM_INPUT_COST_PER_MILLION: float = 0.15
     LLM_OUTPUT_COST_PER_MILLION: float = 0.60
 
+    # Embeddings provider — supported: "gemini", "openai".
+    # Both produce 1536-dimensional vectors so the pgvector schema is unchanged.
+    EMBEDDINGS_PROVIDER: str = "gemini"
+    GEMINI_API_KEY: str = ""
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+
     # Node backend base URL, for any AI-service -> Node callbacks if ever needed.
     BACKEND_URL: str = "http://localhost:4000"
 

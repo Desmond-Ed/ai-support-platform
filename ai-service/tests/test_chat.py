@@ -94,5 +94,5 @@ def test_chat_returns_clean_503_when_rate_limit_retries_are_exhausted(monkeypatc
 
     assert response.status_code == 503
     assert response.json() == {
-        "detail": "AI provider is rate limited; please retry shortly"
+        "detail": "AI provider is temporarily unavailable; please retry shortly"
     }

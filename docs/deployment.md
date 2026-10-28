@@ -1,4 +1,4 @@
-# Deployment Guide - Vercel, Render, Neon, and Redis
+# Deployment Guide - Vercel, Render, Neon, and Valkey
 
 This is the free-tier deployment target for the portfolio build. It replaces the
 earlier Railway assumption. Provider details below were checked on **2026-10-28**;
@@ -13,8 +13,8 @@ free-tier limits and model IDs change, so re-check them before a real deployment
 | AI service | Render free Web Service | Docker, root `ai-service/`, `Dockerfile.prod` | Render injects `PORT`; binds `${PORT:-8000}`. |
 | PostgreSQL + pgvector | Neon free | PostgreSQL 16-compatible | Use the pooled URL for apps, direct URL for migrations. |
 | Redis / BullMQ | Aiven Valkey free (preferred) | Flat-rate Redis-compatible | Must use `maxmemory-policy=noeviction`. |
-| Chat LLM | DeepSeek direct or NVIDIA Build | OpenAI-compatible API | Embeddings stay on OpenAI. |
-| Embeddings | OpenAI `text-embedding-3-small` | 1536 dimensions | `OPENAI_API_KEY` is independent of the chat provider. |
+| Chat LLM | DeepSeek direct or NVIDIA Build | OpenAI-compatible API | `LLM_PROVIDER` selects the provider. |
+| Embeddings | Google Gemini `gemini-embedding-001` (default) or OpenAI | 1536 dimensions | `EMBEDDINGS_PROVIDER` selects the provider; do not mix embedding spaces. |
 
 Do **not** use Render's free PostgreSQL for this project: Render free databases
 expire after 30 days. Do **not** use a per-command metered Redis (for example
@@ -119,7 +119,9 @@ Set these environment variables (see the table below):
 ```text
 ENV=production
 DATABASE_URL=<Neon pooled URL>
-OPENAI_API_KEY=<OpenAI key for embeddings>
+EMBEDDINGS_PROVIDER=gemini
+GEMINI_API_KEY=<Gemini API key>
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 LLM_PROVIDER=openai-compatible
 LLM_BASE_URL=https://integrate.api.nvidia.com/v1
 LLM_API_KEY=<NVIDIA Build key>
@@ -137,8 +139,17 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-flash
 ```
 
-`OPENAI_API_KEY` is still required in both configurations because embeddings are
-always produced by OpenAI `text-embedding-3-small` at 1536 dimensions.
+Gemini embeddings use `RETRIEVAL_DOCUMENT` for ingestion and `RETRIEVAL_QUERY`
+for retrieval, request 1536 output dimensions, and L2-normalize the truncated
+vectors before storing/querying. The Gemini free tier is quota-limited and
+Google may use free-tier content to improve its products; do not upload
+sensitive knowledge on the free tier. NVIDIA Build is also rate-limited
+(roughly 40 requests/minute), which is why chat retries 429s with backoff.
+
+To use OpenAI embeddings instead, set `EMBEDDINGS_PROVIDER=openai`,
+`OPENAI_EMBEDDING_MODEL=text-embedding-3-small`, and `OPENAI_API_KEY`. Keep one
+provider/model for the lifetime of the database; changing embedding spaces
+requires re-embedding every chunk.
 
 After the first deploy, verify:
 
@@ -147,10 +158,12 @@ GET https://<ai-service>.onrender.com/api/health  -> 200
 GET https://<ai-service>.onrender.com/api/ready   -> 200
 ```
 
-`/api/ready` checks both the database connection and that an embeddings key is
-configured. It returns `503` with `{"detail":{"status":"not_ready","checks":...}}`
-when either check fails. Use `/api/health` for the Render liveness probe so a
-sleeping database does not make the service look dead.
+`/api/ready` checks the database connection, the pgvector extension, and the
+required LLM and embeddings configuration without making provider calls. It
+returns `503` with `{"detail":{"status":"not_ready","checks":...}}` when any check
+fails; the `checks` object identifies the failed dependency without exposing
+secrets. Use `/api/health` for the Render liveness probe so a sleeping database
+does not make the service look dead.
 
 ## 4. Deploy the backend on Render
 
@@ -180,10 +193,31 @@ JWT_ACCESS_SECRET=<long random secret>
 JWT_REFRESH_SECRET=<different long random secret>
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+SEED_ADMIN_EMAIL=<initial admin email>
+SEED_ADMIN_PASSWORD=<long random password>
+SEED_ADMIN_NAME=<display name>
 ```
 
 Do not put `DATABASE_URL_UNPOOLED` in the running backend unless you are also
 using it for manual migration commands; it is not needed by the server.
+
+Seed the first admin explicitly after migrations:
+
+```powershell
+cd backend
+$env:NODE_ENV = "production"
+$env:DATABASE_URL = "<direct Neon URL>"
+$env:SEED_ADMIN_EMAIL = "<initial admin email>"
+$env:SEED_ADMIN_PASSWORD = "<long random password>"
+$env:SEED_ADMIN_NAME = "<display name>"
+npm run db:seed
+```
+
+Production seeding fails if `SEED_ADMIN_EMAIL` or `SEED_ADMIN_PASSWORD` is
+missing and creates only that admin. It never creates the known development
+agent/customer accounts in production. Do not run the seed against a production
+database with placeholder credentials, and do not reuse the development
+password.
 
 CORS needs no code change per deploy. `CORS_ORIGIN` is a comma-separated list;
 the same value is used by Express and Socket.IO. For example:
@@ -226,6 +260,9 @@ services.
 | `JWT_REFRESH_SECRET` | yes | Different long random value. |
 | `JWT_ACCESS_EXPIRES_IN` | no | Defaults to `15m`. |
 | `JWT_REFRESH_EXPIRES_IN` | no | Defaults to `7d`. |
+| `SEED_ADMIN_EMAIL` | production seed | Required when seeding with `NODE_ENV=production`. |
+| `SEED_ADMIN_PASSWORD` | production seed | Required when seeding with `NODE_ENV=production`; no default. |
+| `SEED_ADMIN_NAME` | no | Defaults to `Admin`. |
 
 ### AI service
 
@@ -234,7 +271,11 @@ services.
 | `ENV` | yes | `production` on Render. |
 | `PORT` | injected | Render sets it; Docker defaults to 8000. |
 | `DATABASE_URL` | yes | Neon pooled URL with `sslmode=require`. |
-| `OPENAI_API_KEY` | yes | Embeddings, independent of chat provider. |
+| `EMBEDDINGS_PROVIDER` | yes | `gemini` (default) or `openai`. |
+| `GEMINI_API_KEY` | Gemini | Required when `EMBEDDINGS_PROVIDER=gemini`. |
+| `GEMINI_EMBEDDING_MODEL` | no | Defaults to `gemini-embedding-001`. |
+| `OPENAI_EMBEDDING_MODEL` | no | Defaults to `text-embedding-3-small`; used only with OpenAI embeddings. |
+| `OPENAI_API_KEY` | conditional | Required when chat or embeddings use OpenAI. |
 | `LLM_PROVIDER` | yes | `openai`, `deepseek`, or `openai-compatible`. |
 | `DEEPSEEK_API_KEY` | DeepSeek | Required when `LLM_PROVIDER=deepseek`. |
 | `DEEPSEEK_BASE_URL` | no | Defaults to `https://api.deepseek.com`. |
@@ -306,10 +347,10 @@ of leaving the document stuck forever.
 | Socket.IO cannot connect | `VITE_SOCKET_URL` wrong, or origin missing from `CORS_ORIGIN`. | Verify backend URL and same-origin CORS list. |
 | Backend `P1001` / connection timeout | Wrong Neon host, direct URL used at runtime, or Neon asleep. | Use pooled URL for apps; wake Neon and retry. |
 | Migration fails | Pooled URL used for `prisma migrate deploy`, or `DATABASE_URL_UNPOOLED` missing. | Use direct URL with `sslmode=require`. |
-| AI `/api/ready` is 503 | Database unreachable or `OPENAI_API_KEY` missing. | Read `checks` in the response; embeddings key is required even with DeepSeek. |
+| AI `/api/ready` is 503 | Database unreachable, pgvector missing, or LLM/embeddings config incomplete. | Read `checks` in the response; it names the failed dependency without exposing secrets. |
 | First request takes about a minute | Render free service was asleep. | Expected; let cold start finish. Do not add keep-alive pings. |
 | BullMQ job disappears or blocks | Redis eviction policy is not `noeviction`. | `CONFIG GET maxmemory-policy`; use a flat-rate Redis with `noeviction`. |
-| DeepSeek 429s | Provider rate limit. | The AI service retries with backoff, then returns `503` with a retry message. |
+| Chat provider 429s/5xx | Rate limit or transient provider outage. | The AI service retries with backoff, then returns `503` with a retry message. |
 | Documents stuck `PENDING` | Worker is down, or the final failure handler could not reach the database. | Check backend logs, Redis/queue state, and AI `/api/ready`; once the row is reconciled to `FAILED`, use the moderation retry action. |
 | Render free quota exhausted | Two services kept awake. | Let them sleep; 750 hours cannot cover two always-on services. |
 
@@ -320,6 +361,9 @@ Checked against provider documentation on 2026-10-28:
 - DeepSeek base URL `https://api.deepseek.com` and model `deepseek-flash`.
 - NVIDIA Build base URL `https://integrate.api.nvidia.com/v1` and model
   `deepseek-ai/deepseek-v4.1-flash`.
+- Gemini embeddings `gemini-embedding-001` support `RETRIEVAL_DOCUMENT`,
+  `RETRIEVAL_QUERY`, and `output_dimensionality=1536`; truncated Matryoshka
+  vectors are L2-normalized.
 - Render free Web Service hours, memory/CPU, and spin-down behavior.
 - Neon free storage/CU-hours, scale-to-zero, and pooled/direct URLs.
 - Aiven Valkey free capacity and the BullMQ `noeviction` requirement.
@@ -334,3 +378,5 @@ Not independently verified in this repository:
 - Exact Render cold-start time under this workload; the roughly one-minute
   figure is the documented planning assumption, not a measured result.
 - Any current availability change in the third-party model catalog.
+- Both production Dockerfiles were built locally on 2026-10-28; no hosted
+  deployment or live provider call was made.

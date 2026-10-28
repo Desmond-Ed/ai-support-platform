@@ -13,8 +13,11 @@ LLM_MAX_ATTEMPTS = 3
 LLM_RETRY_BASE_DELAY_SECONDS = 1.0
 
 
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
+
+
 class LLMUnavailableError(RuntimeError):
-    """Raised when a provider remains rate limited after all retries."""
+    """Raised when a provider remains temporarily unavailable after retries."""
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -26,11 +29,66 @@ def _status_code(exc: Exception) -> int | None:
     return response_status if isinstance(response_status, int) else None
 
 
-def _is_rate_limit(exc: Exception) -> bool:
-    return _status_code(exc) == 429
+def _is_retryable(exc: Exception) -> bool:
+    status_code = _status_code(exc)
+    if status_code is not None:
+        return status_code in RETRYABLE_STATUS_CODES
+    message = str(exc).upper()
+    return any(
+        marker in message
+        for marker in ("429", "502", "503", "504", "529", "RESOURCE_EXHAUSTED")
+    )
+
+
+def llm_configuration_error() -> str | None:
+    """Validate provider settings without constructing a client or calling out."""
+    provider = settings.LLM_PROVIDER.strip().lower()
+
+    if provider == "deepseek":
+        missing = [
+            name
+            for name, value in (
+                ("DEEPSEEK_API_KEY", settings.DEEPSEEK_API_KEY),
+                ("DEEPSEEK_BASE_URL", settings.DEEPSEEK_BASE_URL),
+                ("DEEPSEEK_MODEL", settings.DEEPSEEK_MODEL),
+            )
+            if not value
+        ]
+        return (
+            f"{', '.join(missing)} required when LLM_PROVIDER=deepseek"
+            if missing
+            else None
+        )
+
+    if provider == "openai-compatible":
+        missing = [
+            name
+            for name, value in (
+                ("LLM_BASE_URL", settings.LLM_BASE_URL),
+                ("LLM_API_KEY", settings.LLM_API_KEY),
+                ("LLM_MODEL", settings.LLM_MODEL),
+            )
+            if not value
+        ]
+        return (
+            f"{', '.join(missing)} required when LLM_PROVIDER=openai-compatible"
+            if missing
+            else None
+        )
+
+    if provider == "openai":
+        if not settings.OPENAI_API_KEY:
+            return "OPENAI_API_KEY is required when LLM_PROVIDER=openai"
+        return None
+
+    return f"Unsupported LLM_PROVIDER: {settings.LLM_PROVIDER}"
 
 
 def get_llm() -> ChatOpenAI:
+    error = llm_configuration_error()
+    if error:
+        raise RuntimeError(error)
+
     provider = settings.LLM_PROVIDER.lower()
 
     if provider == "deepseek":
@@ -89,17 +147,17 @@ async def invoke_with_retry(
         try:
             return await llm.ainvoke(messages)
         except Exception as exc:
-            if not _is_rate_limit(exc):
+            if not _is_retryable(exc):
                 raise
             if attempt >= max_attempts:
                 raise LLMUnavailableError(
-                    "AI provider rate limit retries exhausted"
+                    "AI provider retries exhausted"
                 ) from exc
             delay = base_delay * (2 ** (attempt - 1))
             logger.warning(
-                "LLM provider rate limited; retrying",
+                "LLM provider temporarily unavailable; retrying",
                 extra={"attempt": attempt, "max_attempts": max_attempts, "delay": delay},
             )
             await asyncio.sleep(delay)
 
-    raise LLMUnavailableError("AI provider rate limit retries exhausted")
+    raise LLMUnavailableError("AI provider retries exhausted")

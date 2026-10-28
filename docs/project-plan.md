@@ -149,12 +149,15 @@
   free Docker services for backend/AI, Neon Postgres/pgvector, and flat-rate
   Redis with `noeviction`.
 - AI chat provider is configurable for OpenAI, DeepSeek direct
-  (`deepseek-flash`), or an OpenAI-compatible endpoint such as NVIDIA Build;
-  embeddings remain OpenAI `text-embedding-3-small` and independently require
-  `OPENAI_API_KEY`.
-- AI HTTP 429s retry with exponential backoff and return a clean `503` when
-  exhausted. The AI service adds `/api/ready` for database and embeddings-key
-  readiness while `/api/health` remains dependency-free.
+  (`deepseek-flash`), or an OpenAI-compatible endpoint such as NVIDIA Build.
+  Embeddings default to Gemini `gemini-embedding-001`; OpenAI
+  `text-embedding-3-small` remains supported, both at 1536 dimensions.
+- AI HTTP 429s and transient provider 5xx/529s retry with exponential backoff
+  and return a clean `503` when exhausted. The AI service adds `/api/ready` for
+  database, pgvector, and provider-config readiness while `/api/health` remains
+  dependency-free.
+- Production seeding requires explicit `SEED_ADMIN_EMAIL` and
+  `SEED_ADMIN_PASSWORD` and does not create known development accounts.
 - Production Docker port binding uses Render's `PORT`; Neon pooled/direct URLs
   are separated through `DATABASE_URL` and `DATABASE_URL_UNPOOLED`; deployed
   CORS origins are environment-driven.

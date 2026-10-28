@@ -48,9 +48,9 @@ Deployment guide: [`docs/deployment.md`](docs/deployment.md).
 - Python 3.12+
 - Docker + Docker Compose
 - An LLM provider API key. Chat can use OpenAI, DeepSeek, or an
-  OpenAI-compatible endpoint such as NVIDIA Build. Embeddings always use
-  OpenAI `text-embedding-3-small`, so `OPENAI_API_KEY` is required even when
-  chat uses DeepSeek or NVIDIA.
+  OpenAI-compatible endpoint such as NVIDIA Build. Embeddings default to
+  Gemini `gemini-embedding-001`; OpenAI `text-embedding-3-small` remains
+  supported. Both produce 1536-dimensional vectors.
 
 ### 1. Clone and configure environment
 

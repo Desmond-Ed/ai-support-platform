@@ -49,7 +49,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     except LLMUnavailableError as exc:
         raise HTTPException(
             status_code=503,
-            detail="AI provider is rate limited; please retry shortly",
+            detail="AI provider is temporarily unavailable; please retry shortly",
         ) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="AI service unavailable") from exc

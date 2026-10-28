@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
-from app.embeddings.client import MODEL, embed_documents
+from app.embeddings.client import embed_documents, embedding_model
 from app.ingestion.chunking import chunk_text
 
 router = APIRouter()
@@ -103,7 +103,11 @@ async def ingest_knowledge_document(payload: dict) -> dict:
                         INSERT INTO embeddings (id, "chunkId", model, vector, "createdAt")
                         VALUES (gen_random_uuid(), %s, %s, %s::vector, NOW())
                         """,
-                        (chunk_id, MODEL, f"[{','.join(str(value) for value in vector)}]"),
+                        (
+                            chunk_id,
+                            embedding_model(),
+                            f"[{','.join(str(value) for value in vector)}]",
+                        ),
                     )
 
                 cur.execute(

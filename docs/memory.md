@@ -50,10 +50,20 @@
   model `deepseek-flash`. The OpenAI-compatible NVIDIA example is
   `https://integrate.api.nvidia.com/v1` with
   `deepseek-ai/deepseek-v4.1-flash`. These were checked on 2026-10-28.
-- Embeddings always use OpenAI `text-embedding-3-small` at 1536 dimensions, so
-  `OPENAI_API_KEY` is required even when chat uses DeepSeek/NVIDIA.
-- AI `/api/health` is dependency-free; `/api/ready` checks the database and
-  embeddings key and returns 503 when either is unavailable.
+- Embeddings default to Gemini `gemini-embedding-001` at 1536 dimensions with
+  `RETRIEVAL_DOCUMENT`/`RETRIEVAL_QUERY`; OpenAI `text-embedding-3-small` is
+  still supported. Use one provider/model per database and never mix spaces.
+  `GEMINI_API_KEY` is required for the default; `OPENAI_API_KEY` is only
+  required when chat or embeddings use OpenAI.
+- AI `/api/health` is dependency-free; `/api/ready` checks the database,
+  pgvector extension, LLM config, and embeddings config without provider calls
+  and returns 503 when any check fails. Retrieval filters on the configured
+  embedding model, so vectors from a different model are never mixed.
+- Chat retries 429 and transient 5xx/529 responses up to three attempts with
+  exponential backoff; embeddings retry 429 with the same bounded policy.
+- Production seeding requires explicit `SEED_ADMIN_EMAIL` and
+  `SEED_ADMIN_PASSWORD`; it creates only that admin and never the known
+  development accounts.
 - BullMQ knowledge ingestion uses 4 attempts with exponential backoff starting
   at 30 seconds. Python marks `FAILED` only on the final attempt; Node reconciles
   a still-`PENDING`/`PROCESSING` document if the final HTTP attempt is aborted.

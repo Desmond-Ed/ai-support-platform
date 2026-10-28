@@ -88,6 +88,28 @@ def test_invoke_raises_clean_error_after_retries_exhausted() -> None:
     assert llm.calls == 3
 
 
+def test_invoke_retries_provider_busy_responses() -> None:
+    class FakeBusyError(Exception):
+        status_code = 503
+
+    class BusyLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ainvoke(self, _messages):
+            self.calls += 1
+            if self.calls == 1:
+                raise FakeBusyError("provider busy")
+            return "ok"
+
+    llm = BusyLLM()
+
+    result = asyncio.run(client.invoke_with_retry(llm, [], max_attempts=3, base_delay=0))
+
+    assert result == "ok"
+    assert llm.calls == 2
+
+
 def test_invoke_does_not_retry_other_errors() -> None:
     class FailingLLM:
         async def ainvoke(self, _messages):
@@ -95,3 +117,18 @@ def test_invoke_does_not_retry_other_errors() -> None:
 
     with pytest.raises(ValueError, match="bad request"):
         asyncio.run(client.invoke_with_retry(FailingLLM(), [], base_delay=0))
+
+def test_deepseek_requires_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(client.settings, "LLM_PROVIDER", "deepseek")
+    monkeypatch.setattr(client.settings, "DEEPSEEK_API_KEY", "")
+
+    with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
+        client.get_llm()
+
+
+def test_openai_requires_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(client.settings, "LLM_PROVIDER", "openai")
+    monkeypatch.setattr(client.settings, "OPENAI_API_KEY", "")
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        client.get_llm()

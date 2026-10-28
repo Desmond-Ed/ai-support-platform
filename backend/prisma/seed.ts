@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient, Role } from '../src/generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcrypt';
@@ -5,19 +6,38 @@ import bcrypt from 'bcrypt';
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
+const DEV_PASSWORD = 'DevPassword123!';
+const isProduction = process.env.NODE_ENV === 'production';
+
+const adminEmail =
+  process.env.SEED_ADMIN_EMAIL?.trim() || (isProduction ? '' : 'admin@example.com');
+const adminPassword = process.env.SEED_ADMIN_PASSWORD || (isProduction ? '' : DEV_PASSWORD);
+const adminName = process.env.SEED_ADMIN_NAME?.trim() || 'Admin';
+
 async function main(): Promise<void> {
-  const passwordHash = await bcrypt.hash('DevPassword123!', 10);
+  if (!adminEmail || !adminPassword) {
+    throw new Error(
+      'SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD are required when NODE_ENV=production',
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@example.com' },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: 'admin@example.com',
+      email: adminEmail,
       passwordHash,
-      name: 'Dev Admin',
+      name: adminName,
       role: Role.ADMIN,
     },
   });
+
+  if (isProduction) {
+    console.log('Seeded production admin:', admin.email);
+    return;
+  }
 
   const agent = await prisma.user.upsert({
     where: { email: 'agent@example.com' },
@@ -64,7 +84,7 @@ async function main(): Promise<void> {
     customer: customer.email,
     requestedCustomer: requestedCustomer.email,
   });
-  console.log('All dev accounts use password: DevPassword123!');
+  console.log(`All dev accounts use password: ${DEV_PASSWORD}`);
 }
 
 main()

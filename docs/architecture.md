@@ -21,7 +21,7 @@ flowchart TB
 
     subgraph AIService["AI Service - Python + FastAPI (Render)"]
         RAG["RAG pipeline<br/>LangChain/LlamaIndex"]
-        EMB["Embeddings<br/>(OpenAI)"]
+        EMB["Embeddings<br/>(Gemini/OpenAI)"]
         RET["Retrieval (pgvector)"]
         LLM["LLM client<br/>(DeepSeek/NVIDIA/OpenAI)"]
         EVAL["Evaluation<br/>(groundedness/hallucination)"]
@@ -104,18 +104,20 @@ bounded paragraph-aware chunking. Ingestion uses four BullMQ attempts with
 exponential backoff, and the AI service only marks a document `FAILED` on the
 final attempt. The worker also reconciles a still-unfinished document to
 `FAILED` if the final HTTP attempt is aborted before the AI service can update
-it. Provider-backed embeddings and pgvector writes use
-`text-embedding-3-small` and are validated at 1536 dimensions. Chat can use
-OpenAI, DeepSeek direct (`deepseek-flash`), or an OpenAI-compatible provider
-such as NVIDIA Build; embeddings always use OpenAI and therefore require
-`OPENAI_API_KEY` independently. Retrieval only uses chunks whose document is
-both ingestion `READY` and moderation `APPROVED`, with a conservative degraded
-fallback that now logs the failure instead of failing silently.
+it. Provider-backed embeddings and pgvector writes use Gemini
+`gemini-embedding-001` by default (OpenAI `text-embedding-3-small` is still
+supported) and are validated at 1536 dimensions. Chat can use OpenAI, DeepSeek
+direct (`deepseek-flash`), or an OpenAI-compatible provider such as NVIDIA
+Build; chat and embeddings are configured independently. Retrieval only uses
+chunks whose document is both ingestion `READY` and moderation `APPROVED`, with
+a conservative degraded fallback that now logs the failure instead of failing
+silently.
 
 The AI service exposes `/api/health` as a dependency-free liveness probe and
-`/api/ready` as a readiness probe that checks the database connection and the
-presence of an embeddings key. Render health checks use `/api/health` so a
-sleeping Neon database does not make the service appear dead.
+`/api/ready` as a readiness probe that checks the database connection, pgvector
+extension, and required LLM/embeddings configuration without provider calls.
+Render health checks use `/api/health` so a sleeping Neon database does not make
+the service appear dead.
 
 Socket.IO authenticates access JWTs during connection, places clients in private
 user rooms, and provides server-side emitters for `ticket_updated`,

@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from app.core.config import get_settings
-from app.embeddings.client import embed_query
+from app.embeddings.client import embed_query, embedding_model
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -37,10 +37,11 @@ def retrieve_context(query: str, limit: int = 4) -> list[dict[str, Any]]:
                     JOIN embeddings e ON e."chunkId" = kc.id
                     WHERE kd.status = 'READY'
                       AND kd."moderationStatus" = 'APPROVED'
+                      AND e.model = %s
                     ORDER BY similarity DESC, kc."chunkIndex" ASC
                     LIMIT %s
                     """,
-                    (vector_literal, limit),
+                    (vector_literal, embedding_model(), limit),
                 )
                 rows = cur.fetchall()
     except Exception:
